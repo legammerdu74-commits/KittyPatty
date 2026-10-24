@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gamelle</title>
+<style>
+  :root {
+    --bg: #fff8f4; --card: #f1e0d5; --over: #ffdcc4; --text: #211a15; --muted: #6b5a50;
+    --primary: #9a4e12; --onprimary: #fff; --line: #dcc6b8; --poulet: #e0a030; --boeuf: #b4523a;
+    --err: #ffdad4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a120c; --card: #3d2f26; --over: #743809; --text: #efe0d7; --muted: #c9b5aa;
+      --primary: #ffb787; --onprimary: #512400; --line: #52443c; --err: #93000a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 16px 20px; display: flex; align-items: center; gap: 12px;
+           border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
+  header h1 { margin: 0; font-size: 1.25rem; flex: 1; }
+  header small { color: var(--muted); }
+  main { max-width: 760px; margin: 0 auto; padding: 16px 20px 64px; }
+  h2 { font-size: .9rem; text-transform: uppercase; letter-spacing: .05em; color: var(--primary); margin: 28px 0 10px; }
+  .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+  .card.over { background: var(--over); }
+  .title { font-weight: 700; }
+  .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .muted { color: var(--muted); font-size: .9rem; }
+  button { font: inherit; border: 0; border-radius: 999px; padding: 8px 18px; cursor: pointer;
+           background: var(--primary); color: var(--onprimary); }
+  button.ghost { background: transparent; color: var(--primary); padding: 8px 12px; }
+  label { display: block; margin: 10px 0 4px; font-weight: 600; font-size: .9rem; }
+  input, select, textarea { font: inherit; width: 100%; padding: 8px 10px; border-radius: 10px;
+           border: 1px solid var(--line); background: var(--bg); color: var(--text); }
+  .form { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
+  .form .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .actions { margin-top: 12px; display: flex; gap: 8px; }
+  #banner { background: var(--err); padding: 10px 16px; border-radius: 12px; margin-bottom: 12px; display: none; }
+  .empty { color: var(--muted); }
+  .av { width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 12px; font-weight: 700;
+        display: inline-flex; align-items: center; justify-content: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🐱 Gamelle</h1>
+  <small id="status"></small>
+  <button class="ghost" id="refresh" title="Actualiser">↻</button>
+</header>
+<main>
+  <div id="banner"></div>
+  <section><h2>À encoder</h2><div id="overdue"></div></section>
+  <section><h2>Prochains repas</h2><div id="upcoming"></div></section>
+  <section><h2>Programmes</h2><div id="plans"></div></section>
+  <section><h2>Historique</h2><div id="history"></div></section>
+</main>
+
+<script>
+"use strict";
+const PATES = { poulet: "Poulet", boeuf: "Bœuf" };
+const COLORS = { poulet: "var(--poulet)", boeuf: "var(--boeuf)" };
+let state = { plans: [], entries: [], cats: [] };
+let openForm = null;      // id du repas dont le formulaire est ouvert
+let formDraft = null;     // valeurs saisies, conservées pendant les rafraîchissements
+
+const $ = (id) => document.getElementById(id);
+const CAT_COLORS = ["#d9803f", "#6c8ead", "#8e6baa", "#5e9c76", "#c95c7a", "#8a7b6a"];
+const activeCats = () => (state.cats || []).filter((c) => !c.deleted);
+const catColor = (c) => CAT_COLORS[((c.colorIdx || 0) % CAT_COLORS.length + CAT_COLORS.length) % CAT_COLORS.length];
+const el = (tag, props = {}, ...kids) => {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") n.className = v;
+    else if (k.startsWith("on")) n.addEventListener(k.slice(2), v);
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) n.append(kid);
+  return n;
+};
+
+function token() { return localStorage.getItem("pateToken") || ""; }
+
+async function api(path, body) {
+  const headers = { "X-Token": token() };
+  const opts = body ? { method: "POST", headers: { ...headers, "Content-Type": "application/json" }, body: JSON.stringify(body) }
+                    : { headers };
+  const r = await fetch(path, opts);
+  if (r.status === 401) {
+    const t = prompt("Code secret du serveur :");
+    if (t !== null) { localStorage.setItem("pateToken", t); return api(path, body); }
+    throw new Error("Code secret requis");
+  }
+  if (!r.ok) throw new Error("Erreur " + r.status);
+  return r.json();
+}
+
+const fmtTime = (ms) => new Date(ms).toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
+function dayName(ms) {
+  const d = new Date(ms), t = new Date();
+  const a = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const b = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+  const diff = Math.round((a - b) / 86400000);
+  if (diff === 0) return "Aujourd'hui";
+  if (diff === 1) return "Demain";
+  if (diff === -1) return "Hier";
+  return d.toLocaleDateString("fr-BE", { weekday: "short", day: "numeric", month: "short" });
+}
+const hhmm = (min) => String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0");
+const every = (n) => (n <= 1 ? "Tous les jours" : "Tous les " + n + " jours");
+
+function badge(pate, qty) {
+  return el("span", { class: "row" },
+    el("span", { class: "dot", style: "background:" + (COLORS[pate] || COLORS.poulet) }),
+    (PATES[pate] || pate) + (qty ? " · " + qty : ""));
+}
+
+function catsLine(ids) {
+  const cats = activeCats();
+  if (cats.length < 2) return "";
+  const chosen = cats.filter((c) => (ids || []).includes(c.id));
+  if (!chosen.length) return "";
+  return el("div", { class: "row muted", style: "margin-top:6px" },
+    chosen.map((c) => el("span", { class: "av", style: "background:" + catColor(c) }, (c.name || "?").slice(0, 1).toUpperCase())),
+    chosen.map((c) => c.name).join(", "));
+}
+
+function toLocalInput(ms) {
+  const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000);
+  return d.toISOString().slice(0, 16);
+}
+
+function formFor(e) {
+  const wasDone = e.status === "done";
+  const d = formDraft && formDraft.id === e.id ? formDraft : {
+    id: e.id,
+    pate: wasDone && e.givenPate ? e.givenPate : e.pate,
+    qty: wasDone ? e.givenQty : e.qty,
+    note: e.note || "",
+    catIds: e.catIds && e.catIds.length ? [...e.catIds] : activeCats().map((c) => c.id),
+    when: toLocalInput(wasDone && e.doneAt ? e.doneAt : (e.at < Date.now() - 86400000 ? e.at : Date.now())),
+  };
+  formDraft = d;
+  const sel = el("select", { onchange: (ev) => (d.pate = ev.target.value) },
+    ...Object.entries(PATES).map(([k, v]) => { const o = el("option", { value: k }, v); if (k === d.pate) o.selected = true; return o; }));
+  const qty = el("input", { value: d.qty, placeholder: "ex : 1 sachet, 80 g", oninput: (ev) => (d.qty = ev.target.value) });
+  const note = el("input", { value: d.note, placeholder: "facultatif", oninput: (ev) => (d.note = ev.target.value) });
+  const when = el("input", { type: "datetime-local", value: d.when, onchange: (ev) => (d.when = ev.target.value) });
+  const cats = activeCats();
+  const catBox = cats.length < 2 ? "" : el("div", {},
+    el("label", {}, "Chats"),
+    el("div", { class: "row" }, cats.map((c) => {
+      const cb = el("input", { type: "checkbox", style: "width:auto", onchange: (ev) => {
+        d.catIds = ev.target.checked ? [...new Set([...d.catIds, c.id])] : d.catIds.filter((x) => x !== c.id);
+      } });
+      cb.checked = d.catIds.includes(c.id);
+      return el("label", { class: "row", style: "margin:0;font-weight:400" }, cb, c.name);
+    })));
+  return el("div", { class: "form" },
+    el("div", { class: "grid" },
+      el("div", {}, el("label", {}, "Pâtée donnée"), sel),
+      el("div", {}, el("label", {}, "Quantité"), qty)),
+    catBox,
+    el("label", {}, "Remarque"), note,
+    el("label", {}, "Donné le"), when,
+    el("div", { class: "actions" },
+      el("button", { onclick: () => saveDone(e, d) }, "Enregistrer"),
+      e.status === "skipped" ? "" : el("button", { class: "ghost", onclick: () => saveSkip(e) }, "Rien donné"),
+      el("button", { class: "ghost", onclick: () => { openForm = null; formDraft = null; render(); } }, "Annuler")));
+}
+
+async function push(entry) {
+  entry.updatedAt = Date.now();
+  state = await api("/api/sync", { plans: [], entries: [entry], cats: [] });
+  openForm = null; formDraft = null;
+  render();
+}
+function saveDone(e, d) {
+  const when = d.when ? new Date(d.when).getTime() : Date.now();
+  return push({ ...e, status: "done", givenPate: d.pate, givenQty: d.qty.trim(), note: d.note.trim(), doneAt: when, catIds: d.catIds });
+}
+function saveSkip(e) {
+  return push({ ...e, status: "skipped", givenPate: "", givenQty: "", doneAt: Date.now() });
+}
+
+function entryCard(e, over) {
+  const open = openForm === e.id;
+  const kids = [
+    el("div", { class: "title" }, dayName(e.at) + " · " + fmtTime(e.at)),
+    badge(e.status === "done" ? (e.givenPate || e.pate) : e.pate, e.status === "done" ? e.givenQty : e.qty),
+    catsLine(e.catIds),
+  ];
+  if (e.status === "done") {
+    kids.push(el("div", { class: "muted" }, "✓ Donné à " + fmtTime(e.doneAt) + (e.givenPate && e.givenPate !== e.pate ? " (prévu : " + (PATES[e.pate] || e.pate) + ")" : "")));
+  } else if (e.status === "skipped") {
+    kids.push(el("div", { class: "muted" }, "⏭ Repas passé (rien donné)"));
+  }
+  if (e.note) kids.push(el("div", {}, e.note));
+  const btnLabel = e.status === "pending" ? (over ? "Encoder" : "Donné") : "Modifier";
+  if (!open) {
+    kids.push(el("div", { class: "actions" }, el("button", { onclick: () => { openForm = e.id; formDraft = null; render(); } }, btnLabel)));
+  } else {
+    kids.push(formFor(e));
+  }
+  return el("div", { class: "card" + (over ? " over" : "") }, ...kids);
+}
+
+function render() {
+  const now = Date.now();
+  const live = state.entries.filter((e) => !e.deleted);
+  const pending = live.filter((e) => e.status === "pending");
+  const overdue = pending.filter((e) => e.at <= now).sort((a, b) => a.at - b.at);
+  const upcoming = pending.filter((e) => e.at > now).sort((a, b) => a.at - b.at).slice(0, 12);
+  const history = live.filter((e) => e.status !== "pending").sort((a, b) => b.at - a.at).slice(0, 60);
+  const plans = state.plans.filter((p) => !p.deleted).sort((a, b) => a.timeMin - b.timeMin);
+
+  const fill = (id, nodes, emptyText) => {
+    const box = $(id); box.replaceChildren();
+    if (!nodes.length) box.append(el("div", { class: "empty" }, emptyText));
+    nodes.forEach((n) => box.append(n));
+  };
+  fill("overdue", overdue.map((e) => entryCard(e, true)), "Rien à encoder 👍");
+  fill("upcoming", upcoming.map((e) => entryCard(e, false)), "Aucun repas programmé (les programmes se créent depuis l'appli du téléphone).");
+  fill("plans", plans.map((p) => el("div", { class: "card" },
+    el("div", { class: "title" }, every(p.everyDays) + " à " + hhmm(p.timeMin) + (p.active ? "" : " (en pause)")),
+    badge(p.pate, p.qty),
+    catsLine(p.catIds),
+    el("div", { class: "muted" }, "À partir du " + p.start))), "Aucun programme.");
+  fill("history", history.map((e) => entryCard(e, false)), "Historique vide pour l'instant.");
+}
+
+async function refresh() {
+  try {
+    state = await api("/api/state");
+    $("status").textContent = "Mis à jour à " + new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
+    $("banner").style.display = "none";
+    if (!openForm) render();
+  } catch (err) {
+    $("banner").textContent = "Impossible de joindre le serveur : " + err.message;
+    $("banner").style.display = "block";
+  }
+}
+$("refresh").addEventListener("click", refresh);
+refresh();
+setInterval(refresh, 30000);
+</script>
+</body>
+</html>

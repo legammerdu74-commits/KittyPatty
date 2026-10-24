@@ -1,0 +1,16 @@
+[Unit]
+Description=Serveur pâtée du chat
+After=network.target
+
+[Service]
+# Adapte l'utilisateur et le dossier si besoin
+User=pate
+WorkingDirectory=/opt/chat-pate/server
+Environment=PATE_PORT=8765
+# Choisis un code secret (le même sera à saisir dans l'appli et sur la page web)
+Environment=PATE_TOKEN=change-moi
+ExecStart=/usr/bin/python3 /opt/chat-pate/server/server.py
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
