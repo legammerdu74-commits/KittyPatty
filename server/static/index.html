@@ -106,10 +106,13 @@
   .calendar-legend .calendar-dot { width: 8px; height: 8px; border-radius: 50%; }
   .day-card h3 { margin: 0 0 10px; text-transform: capitalize; font-size: 1rem; }
   .day-meals { display: grid; gap: 8px; max-height: 440px; overflow: auto; }
-  .calendar-stats { display: flex; gap: 8px; margin-top: 12px; }
-  .calendar-stat { flex: 1; text-align: center; background: var(--bg); border-radius: 12px; padding: 8px 5px; }
-  .calendar-stat strong { display: block; font-size: 1.15rem; }
-  .calendar-stat small { color: var(--muted); }
+  .calendar-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .calendar-stat { min-width: 0; min-height: 76px; display: flex; flex-direction: column; justify-content: center;
+                   text-align: center; background: var(--bg); border-radius: 12px; padding: 8px 6px; }
+  .calendar-stat strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                          font-size: clamp(.9rem, 1.5vw, 1.15rem); line-height: 1.25; }
+  .calendar-stat small { display: -webkit-box; overflow: hidden; color: var(--muted); line-height: 1.25;
+                         -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
   .food-categories { display: flex; gap: 12px; margin: 16px 0; }
   .food-category { min-width: 190px; min-height: 54px; border: 1px solid var(--line); background: var(--surface);
                    color: var(--text); font-size: 1rem; font-weight: 700; }
@@ -154,7 +157,6 @@
     <button class="tab" id="tab-upcoming" role="tab" aria-selected="false" aria-controls="panel-upcoming">Prochains repas</button>
     <button class="tab" id="tab-plans" role="tab" aria-selected="false" aria-controls="panel-plans">Programmes</button>
     <button class="tab" id="tab-food" role="tab" aria-selected="false" aria-controls="panel-food">Alimentation</button>
-    <button class="tab" id="tab-history" role="tab" aria-selected="false" aria-controls="panel-history">Historique</button>
     <button class="tab" id="tab-cats" role="tab" aria-selected="false" aria-controls="panel-cats">Chats</button>
   </nav>
   <section class="panel active" id="panel-overdue" role="tabpanel" aria-labelledby="tab-overdue">
@@ -211,12 +213,8 @@
       <div class="card-grid" id="patterns"></div>
     </section>
   </section>
-  <section class="panel" id="panel-history" role="tabpanel" aria-labelledby="tab-history">
-    <div class="panel-heading"><div><h2>Historique</h2><p>Les repas déjà encodés, avec leurs notes et photos.</p></div></div>
-    <div class="card-grid" id="history"></div>
-  </section>
   <section class="panel" id="panel-cats" role="tabpanel" aria-labelledby="tab-cats">
-    <div class="panel-heading"><div><h2>Chats</h2><p>Choisis un profil pour consulter ses repas et adapter la couleur d’accent de cette vue.</p></div></div>
+    <div class="panel-heading"><div><h2>Chats</h2><p>Choisis un profil pour consulter ses statistiques, ses repas et son historique.</p></div></div>
     <div class="chat-browser">
       <div class="chat-list"><label for="chatList">Profil du chat</label><select id="chatList"></select></div>
       <div class="chat-detail" id="chatDetail"></div>
@@ -697,7 +695,6 @@ function render() {
   const visibleUpcoming = (calendarCatId
     ? allUpcoming.filter((entry) => (entry.catIds || []).includes(calendarCatId))
     : allUpcoming).slice(0, 12);
-  const history = live.filter((e) => e.status !== "pending").sort((a, b) => b.at - a.at).slice(0, 60);
   const plans = state.plans.filter((p) => !p.deleted).sort((a, b) => a.timeMin - b.timeMin);
 
   const fill = (id, nodes, emptyText) => {
@@ -721,7 +718,6 @@ function render() {
     : "",
     catsLine(p.catIds),
     el("div", { class: "muted" }, "À partir du " + p.start))), "Aucun programme.");
-  fill("history", history.map((e) => entryCard(e, false)), "Historique vide pour l'instant.");
   fill("products", activeProducts().map((product) => el("div", { class: "card" },
     el("div", { class: "title" }, (FOOD_ICONS[product.kind] || "🥫") + " " + product.name),
     el("div", { class: "muted" }, [
@@ -781,6 +777,70 @@ function chatMeals(cat) {
   return { scheduled: scheduled.sort((a, b) => a.at - b.at).slice(0, 30), history };
 }
 
+function parseFoodQuantity(value) {
+  const match = /^\s*(\d+(?:[.,]\d+)?)\s*(g|gr|grammes?|sachets?|portions?)?\b/i.exec(value || "");
+  if (!match) return null;
+  const amount = Number(match[1].replace(",", "."));
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  const unit = (match[2] || "").toLowerCase();
+  if (unit.startsWith("g")) return { amount, isGrams: true };
+  if (unit) return { amount, isGrams: false };
+  return null;
+}
+
+function gramsFor(quantity, product) {
+  const parsed = parseFoodQuantity(quantity);
+  if (!parsed) return null;
+  if (parsed.isGrams) return parsed.amount;
+  const weight = Number(String(product?.weight || "").replace(",", "."));
+  return Number.isFinite(weight) && weight > 0 ? parsed.amount * weight : null;
+}
+
+function costFor(quantity, product) {
+  const parsed = parseFoodQuantity(quantity);
+  const rawPrice = String(product?.packPrice || "").trim();
+  const price = Number(rawPrice.replace(",", "."));
+  if (!parsed || !rawPrice || !Number.isFinite(price) || price < 0) return null;
+  if (!parsed.isGrams) return parsed.amount * price;
+  const weight = Number(String(product?.weight || "").replace(",", "."));
+  return Number.isFinite(weight) && weight > 0 ? parsed.amount / weight * price : null;
+}
+
+function chatFoodStats(cat) {
+  const meals = (state.entries || []).filter((entry) =>
+    !entry.deleted && entry.status === "done" && (entry.catIds || []).includes(cat.id));
+  const totalGrams = meals.reduce((total, entry) => {
+    const product = (state.products || []).find((item) => item.id === entry.productId)
+      || activeProducts().find((item) => item.id === entry.productId);
+    const quantity = entry.givenQty || entry.qty || "";
+    const sharedBy = new Set(entry.catIds || []).size || 1;
+    return total + (gramsFor(quantity, product) || 0) / sharedBy;
+  }, 0);
+  let monthlyCost = 0;
+  let unpricedMeals = 0;
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  for (const plan of state.plans || []) {
+    if (plan.deleted || !plan.active || !(plan.catIds || []).includes(cat.id)) continue;
+    const start = localDate(plan.start);
+    if (!start) continue;
+    const interval = Math.max(1, Number(plan.everyDays) || 1);
+    for (let offset = 0; offset < 30; offset++) {
+      const date = new Date(todayStart.getFullYear(), todayStart.getMonth(), todayStart.getDate() + offset);
+      if (date < start || dayDiff(start, date) % interval !== 0) continue;
+      const product = planFoodOn(plan, date, start);
+      const mealCost = costFor(plan.qty || "", product);
+      if (mealCost === null) {
+        unpricedMeals++;
+      } else {
+        const sharedBy = new Set(plan.catIds || []).size || 1;
+        monthlyCost += mealCost / sharedBy;
+      }
+    }
+  }
+  return { totalGrams, mealCount: meals.length, monthlyCost, unpricedMeals };
+}
+
 function renderChats() {
   const cats = activeCats();
   if (!cats.some((cat) => cat.id === selectedChatId)) selectedChatId = cats[0]?.id || "";
@@ -806,9 +866,21 @@ function renderChats() {
   const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
   document.documentElement.style.setProperty("--onprimary", luminance > 0.4 ? "#211a15" : "#fff");
   const { scheduled, history } = chatMeals(cat);
+  const stats = chatFoodStats(cat);
+  const gramsLabel = stats.totalGrams >= 1000
+    ? (stats.totalGrams / 1000).toLocaleString("fr-BE", { maximumFractionDigits: 2 }) + " kg"
+    : Math.round(stats.totalGrams).toLocaleString("fr-BE") + " g";
+  const costLabel = stats.monthlyCost.toLocaleString("fr-BE", { style: "currency", currency: "EUR" });
   detail.replaceChildren(
     el("h3", {}, cat.name),
     el("div", { class: "chat-color-bar", title: "Couleur du profil" }),
+    el("div", { class: "calendar-stats" },
+      el("div", { class: "calendar-stat" }, el("strong", {}, gramsLabel), el("small", {}, "mangé · quantités enregistrées")),
+      el("div", { class: "calendar-stat" }, el("strong", {},
+        stats.unpricedMeals > 0 ? (stats.monthlyCost > 0 ? "≥ " + costLabel : "—") : costLabel),
+        el("small", {}, stats.unpricedMeals > 0 ? "coût estimé / 30 jours · données incomplètes" : "coût estimé / 30 jours")),
+      el("div", { class: "calendar-stat" }, el("strong", {}, String(stats.mealCount)), el("small", {}, "repas donnés"))),
+    el("p", { class: "muted" }, "Les repas partagés sont répartis entre les chats. Le coût est estimé à partir des programmes des 30 prochains jours et exclut les quantités ou tarifs manquants."),
     el("div", { class: "panel-heading" }, el("div", {}, el("h2", {}, "Repas prévus"), el("p", {}, "Les prochains repas associés à ce chat."))),
     el("div", { class: "card-grid" }, ...(scheduled.length ? scheduled.map((meal) => entryCard(meal, false)) : [el("div", { class: "empty" }, "Aucun repas prévu.") ])),
     el("div", { class: "panel-heading", style: "margin-top:24px" }, el("div", {}, el("h2", {}, "Historique"), el("p", {}, "Les repas déjà enregistrés pour ce chat."))),
