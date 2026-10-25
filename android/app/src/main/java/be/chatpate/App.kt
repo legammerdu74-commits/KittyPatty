@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -107,6 +108,9 @@ fun App(openEntry: MutableState<String?>) {
     var showNewCat by remember { mutableStateOf(false) }
     var editCatId by remember { mutableStateOf<String?>(null) }
     var selectedCatId by remember { mutableStateOf<String?>(null) }
+    BackHandler(enabled = tab == 2 && cats.any { it.id == selectedCatId }) {
+        selectedCatId = null
+    }
 
     // Revérifie les autorisations quand on revient dans l'appli.
     var tick by remember { mutableIntStateOf(0) }

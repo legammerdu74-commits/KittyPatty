@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +27,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.time.Instant
@@ -279,6 +283,7 @@ fun ProductCatalogDialog(
     var brand by remember(initialProductId) { mutableStateOf(initialProduct?.brand.orEmpty()) }
     var price by remember(initialProductId) { mutableStateOf(initialProduct?.packPrice.orEmpty()) }
     var weight by remember(initialProductId) { mutableStateOf(initialProduct?.weight.orEmpty()) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     val selected = products.firstOrNull { it.id == selectedId && !it.deleted }
 
     AlertDialog(
@@ -308,56 +313,99 @@ fun ProductCatalogDialog(
             }
         },
         confirmButton = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selected != null && selected.id !in setOf("poulet", "boeuf")) {
-                    TextButton(onClick = {
-                        onDelete(selected.id)
-                        selectedId = null
-                        name = ""
-                        brand = ""
-                        price = ""
-                        weight = ""
-                    }) { Text("Supprimer") }
-                }
-                Button(
-                    enabled = name.isNotBlank() && brand.isNotBlank() &&
-                        (price.replace(',', '.').toDoubleOrNull()?.let { it >= 0 } == true) &&
-                        (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true),
-                    onClick = {
-                        onSave(
-                            FoodProduct(
-                                id = selectedId ?: UUID.randomUUID().toString().take(8),
-                                name = name.trim(),
-                                kind = kind,
-                                brand = brand.trim(),
-                                packPrice = price.trim().replace(',', '.'),
-                                weight = weight.trim().replace(',', '.'),
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (selectedId != null) {
+                        OutlinedButton(
+                            onClick = {
+                                selectedId = null
+                                name = ""
+                                kind = "sachet"
+                                brand = ""
+                                price = ""
+                                weight = ""
+                            },
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_action_plus),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
                             )
-                        )
-                        selectedId = null
-                        name = ""
-                        brand = ""
-                        price = ""
-                        weight = ""
-                    },
-                ) { Text(if (selected == null) "Ajouter" else "Enregistrer") }
-            }
-        },
-        dismissButton = {
-            Row {
-                if (selectedId != null) {
-                    TextButton(onClick = {
-                        selectedId = null
-                        name = ""
-                        brand = ""
-                        price = ""
-                        weight = ""
-                    }) { Text("Nouveau") }
+                            Text(" Nouveau")
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (selected != null && selected.id !in setOf("poulet", "boeuf")) {
+                        IconButton(onClick = { showDeleteConfirmation = true }) {
+                            Icon(
+                                painterResource(R.drawable.ic_action_delete),
+                                contentDescription = "Supprimer cette nourriture",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.size(48.dp))
+                    }
                 }
-                TextButton(onClick = onDismiss) { Text("Fermer") }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Fermer") }
+                    Button(
+                        enabled = name.isNotBlank() && brand.isNotBlank() &&
+                            (price.replace(',', '.').toDoubleOrNull()?.let { it >= 0 } == true) &&
+                            (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true),
+                        onClick = {
+                            onSave(
+                                FoodProduct(
+                                    id = selectedId ?: UUID.randomUUID().toString().take(8),
+                                    name = name.trim(),
+                                    kind = kind,
+                                    brand = brand.trim(),
+                                    packPrice = price.trim().replace(',', '.'),
+                                    weight = weight.trim().replace(',', '.'),
+                                )
+                            )
+                            onDismiss()
+                        },
+                    ) { Text(if (selected == null) "Ajouter" else "Enregistrer") }
+                }
             }
         },
     )
+
+    if (showDeleteConfirmation && selected != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Supprimer cette nourriture ?") },
+            text = { Text("« ${selected.name} » sera retirée du catalogue et des combinaisons qui l’utilisent.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(selected.id)
+                        selectedId = null
+                        name = ""
+                        kind = "sachet"
+                        brand = ""
+                        price = ""
+                        weight = ""
+                        showDeleteConfirmation = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("Supprimer") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) { Text("Annuler") }
+            },
+        )
+    }
 }
 
 @Composable
