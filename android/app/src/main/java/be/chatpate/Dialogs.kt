@@ -518,6 +518,8 @@ fun EncodeDialog(
     foodTypes: List<FoodType>,
     onSave: (pate: String, qty: String, note: String, doneAt: Long, catIds: List<String>, photo: String, productId: String, foodTypeId: String) -> Unit,
     onSkip: () -> Unit,
+    onDelete: () -> Unit,
+    onDeletePermanently: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -559,6 +561,8 @@ fun EncodeDialog(
     }
 
     val doneDt = Instant.ofEpochMilli(doneAt).atZone(zone)
+    var confirmDelete by remember(entry.id) { mutableStateOf(false) }
+    var confirmPermanentDelete by remember(entry.id) { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -575,7 +579,6 @@ fun EncodeDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-
                 if (cats.size > 1) {
                     Text("Quel(s) chat(s) ?", fontWeight = FontWeight.Bold)
                     CatPicker(cats, catIds) { catIds = it }
@@ -664,13 +667,102 @@ fun EncodeDialog(
             }
         },
         confirmButton = {
-            Button(
-                enabled = catIds.isNotEmpty() || cats.isEmpty(),
-                onClick = { onSave(pate, qty.trim(), note.trim(), doneAt, catIds, photo, productId, foodTypeId) },
-            ) { Text("Enregistrer") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onDismiss) { Text("Annuler") }
+                if ((entry.status != Status.PENDING || entry.deleted) && !entry.permanentlyDeleted) {
+                    IconButton(onClick = { confirmDelete = true }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_action_delete),
+                            contentDescription = "Supprimer l'encodage",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.size(48.dp))
+                }
+                Button(
+                    enabled = catIds.isNotEmpty() || cats.isEmpty(),
+                    onClick = { onSave(pate, qty.trim(), note.trim(), doneAt, catIds, photo, productId, foodTypeId) },
+                ) { Text("Enregistrer") }
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+        dismissButton = {},
     )
+    if (confirmDelete) {
+        val future = entry.at > System.currentTimeMillis()
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(if (entry.deleted) "Supprimer entièrement ce repas ?" else "Que veux-tu supprimer ?") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = when {
+                            entry.deleted -> "Le repas et ses données seront retirés du calendrier et de l'historique."
+                            future -> "Le repas sera rétabli comme repas à venir."
+                            else -> "Tu peux effacer uniquement les données saisies ou supprimer entièrement ce repas du calendrier et de l'historique."
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (entry.deleted || !future) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = if (entry.deleted) {
+                                { confirmDelete = false; confirmPermanentDelete = true }
+                            } else onDelete,
+                        ) {
+                            Text(if (entry.deleted) "Supprimer entièrement" else "Supprimer l'encodage")
+                        }
+                        if (!entry.deleted) {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    confirmDelete = false
+                                    confirmPermanentDelete = true
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Text("Supprimer entièrement")
+                            }
+                        }
+                    } else {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onDelete,
+                        ) {
+                            Text("Rétablir le repas")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+        )
+    }
+    if (confirmPermanentDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmPermanentDelete = false },
+            title = { Text("Confirmer la suppression entière ?") },
+            text = {
+                Text("Ce repas et toutes ses données seront définitivement retirés du calendrier et de l'historique. Cette action est irréversible.")
+            },
+            confirmButton = {
+                TextButton(onClick = onDeletePermanently) {
+                    Text("Supprimer entièrement", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmPermanentDelete = false }) { Text("Annuler") }
+            },
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

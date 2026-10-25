@@ -412,7 +412,9 @@ function mealsForMonth() {
   const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
   const end = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
   const now = Date.now();
-  const liveEntries = (state.entries || []).filter((entry) => !entry.deleted);
+  const liveEntries = (state.entries || []).filter((entry) =>
+    !entry.permanentlyDeleted &&
+    (!entry.deleted || (entry.status === "pending" && entry.at <= now)));
   const byId = new Map((state.entries || []).map((entry) => [entry.id, entry]));
   const meals = liveEntries.filter((entry) => {
     const date = new Date(entry.at);
@@ -441,7 +443,7 @@ function mealsForMonth() {
         productId: product?.id || "",
         foodTypeId: typeId, foodTypeName: foodType?.name || "", foodTypeEmoji: foodType?.emoji || "",
         status: "pending", givenPate: "", givenQty: "", note: "", doneAt: 0, deleted: false,
-        updatedAt: 0, catIds: plan.catIds || [],
+        updatedAt: 0, catIds: plan.catIds || [], plannedProductId: product?.id || "",
       });
     }
   }
@@ -627,6 +629,7 @@ function formFor(e) {
     el("div", { class: "actions" },
       el("button", { onclick: () => saveDone(e, d) }, "Enregistrer"),
       e.status === "skipped" ? "" : el("button", { class: "ghost", onclick: () => saveSkip(e) }, "Rien donné"),
+      e.status === "pending" ? "" : el("button", { class: "ghost", onclick: () => deleteEntry(e) }, "Supprimer l’encodage"),
       el("button", { class: "ghost", onclick: () => { openForm = null; formDraft = null; render(); } }, "Annuler")));
 }
 
@@ -642,6 +645,8 @@ function saveDone(e, d) {
   return push({
     ...e,
     status: "done",
+    deleted: false,
+    permanentlyDeleted: false,
     givenPate: d.pate,
     givenQty: d.qty.trim(),
     note: d.note.trim(),
@@ -654,7 +659,53 @@ function saveDone(e, d) {
   });
 }
 function saveSkip(e) {
-  return push({ ...e, status: "skipped", givenPate: "", givenQty: "", doneAt: Date.now() });
+  return push({ ...e, status: "skipped", deleted: false, permanentlyDeleted: false, givenPate: "", givenQty: "", doneAt: Date.now() });
+}
+function deleteEntry(e) {
+  if (e.deleted) return permanentlyDeleteEntry(e);
+  if (!confirm(e.at > Date.now()
+    ? "Supprimer cet encodage et rétablir le repas à venir ?"
+    : "Supprimer cet encodage ? Tu pourras le saisir à nouveau depuis le calendrier.")) return;
+  const foodTypeId = e.foodTypeId || e.pate;
+  const currentProduct = activeProducts().find((product) =>
+    product.id === e.productId && product.kind === foodTypeId);
+  const plannedProductId = e.plannedProductId || currentProduct?.id ||
+    activeProducts().find((product) => product.id === foodTypeId || product.kind === foodTypeId)?.id || "";
+  return push({
+    ...e,
+    status: "pending",
+    deleted: e.at <= Date.now(),
+    givenPate: "",
+    givenQty: "",
+    note: "",
+    doneAt: 0,
+    photo: "",
+    productId: plannedProductId,
+    plannedProductId,
+    givenFoodTypeId: "",
+    givenFoodTypeName: "",
+    givenFoodTypeEmoji: "",
+  });
+}
+
+function permanentlyDeleteEntry(e) {
+  if (!confirm("Supprimer totalement ce repas du calendrier et de l’historique ?")) return;
+  if (!confirm("Confirmer la suppression définitive ? Cette action est irréversible.")) return;
+  return push({
+    ...e,
+    status: "pending",
+    deleted: true,
+    permanentlyDeleted: true,
+    givenPate: "",
+    givenQty: "",
+    note: "",
+    doneAt: 0,
+    photo: "",
+    givenFoodTypeId: "",
+    givenFoodTypeName: "",
+    givenFoodTypeEmoji: "",
+    catIds: [],
+  });
 }
 
 function entryCard(e, over) {
@@ -677,9 +728,12 @@ function entryCard(e, over) {
   }
   if (e.note) kids.push(el("div", {}, e.note));
   if (e.photo) kids.push(el("img", { class: "meal-photo", src: "data:image/jpeg;base64," + e.photo, alt: "Photo du repas" }));
-  const btnLabel = e.status === "pending" ? (over ? "Encoder" : "Donné") : "Modifier";
+  if (e.deleted) kids.push(el("div", { class: "muted" }, "Encodage supprimé · tu peux le saisir à nouveau"));
+  const btnLabel = e.deleted ? "Encoder à nouveau" : e.status === "pending" ? (over ? "Encoder" : "Donné") : "Modifier";
   if (!open) {
-    kids.push(el("div", { class: "actions" }, el("button", { onclick: () => { openForm = e.id; formDraft = null; render(); } }, btnLabel)));
+    kids.push(el("div", { class: "actions" },
+      el("button", { onclick: () => { openForm = e.id; formDraft = null; render(); } }, btnLabel),
+      e.deleted ? el("button", { class: "ghost", onclick: () => permanentlyDeleteEntry(e) }, "Supprimer totalement") : ""));
   } else {
     kids.push(formFor(e));
   }
@@ -688,7 +742,7 @@ function entryCard(e, over) {
 
 function render() {
   const now = Date.now();
-  const live = state.entries.filter((e) => !e.deleted);
+  const live = state.entries.filter((e) => !e.deleted && !e.permanentlyDeleted);
   const pending = live.filter((e) => e.status === "pending");
   const overdue = pending.filter((e) => e.at <= now).sort((a, b) => a.at - b.at);
   const allUpcoming = pending.filter((e) => e.at > now).sort((a, b) => a.at - b.at);
@@ -768,6 +822,7 @@ function chatMeals(cat) {
         id, planId: plan.id, at, pate: typeId, foodTypeId: typeId,
         foodTypeName: type?.name || "", foodTypeEmoji: type?.emoji || "",
         qty: plan.qty || "", productId: product?.id || "", catIds: plan.catIds || [],
+        plannedProductId: product?.id || "",
         status: "pending", givenPate: "", givenQty: "", note: "", doneAt: 0, deleted: false,
       });
     }

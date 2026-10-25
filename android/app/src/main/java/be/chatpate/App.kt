@@ -270,7 +270,7 @@ fun App(openEntry: MutableState<String?>) {
         )
     }
 
-    val entryToEncode = state.entries.firstOrNull { it.id == encodeId && !it.deleted }
+    val entryToEncode = state.entries.firstOrNull { it.id == encodeId }
     if (entryToEncode != null) {
         EncodeDialog(
             entry = entryToEncode,
@@ -285,6 +285,18 @@ fun App(openEntry: MutableState<String?>) {
             },
             onSkip = {
                 Store.markSkipped(entryToEncode.id)
+                Notifier.cancel(ctx, entryToEncode.id)
+                Planner.afterChange(ctx)
+                encodeId = null
+            },
+            onDelete = {
+                Store.deleteEntry(entryToEncode.id)
+                Notifier.cancel(ctx, entryToEncode.id)
+                Planner.afterChange(ctx)
+                encodeId = null
+            },
+            onDeletePermanently = {
+                Store.permanentlyDeleteEntry(entryToEncode.id)
                 Notifier.cancel(ctx, entryToEncode.id)
                 Planner.afterChange(ctx)
                 encodeId = null
@@ -608,6 +620,14 @@ fun MealCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                if (e?.deleted == true) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Encodage supprimé · tu peux le saisir à nouveau",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (e != null && e.note.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(e.note, style = MaterialTheme.typography.bodyMedium)
@@ -625,7 +645,9 @@ fun MealCard(
                 if (pending && e != null && onOpen != null) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onOpen(e.id) }, modifier = Modifier.height(48.dp)) { Text(if (overdue) "Encoder" else "Donné") }
+                        Button(onClick = { onOpen(e.id) }, modifier = Modifier.height(48.dp)) {
+                            Text(if (e.deleted) "Encoder à nouveau" else if (overdue) "Encoder" else "Donné")
+                        }
                         if (onSkip != null) {
                             TextButton(onClick = { onSkip(e.id) }, modifier = Modifier.height(48.dp)) { Text("Passer") }
                         }
