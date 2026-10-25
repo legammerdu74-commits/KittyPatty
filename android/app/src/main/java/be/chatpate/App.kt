@@ -371,7 +371,7 @@ fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
         ) {
             Box(
                 Modifier
-                    .size(42.dp)
+                    .size(48.dp)
                     .background(c.primary, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
@@ -379,7 +379,7 @@ fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
                     painterResource(R.drawable.ic_logo_mark),
                     contentDescription = null,
                     tint = c.onPrimary,
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier.size(40.dp),
                 )
             }
             Spacer(Modifier.width(12.dp))
