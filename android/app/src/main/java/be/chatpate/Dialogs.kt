@@ -283,44 +283,12 @@ fun ProductCatalogDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Catalogue de nourriture") },
+        title = { Text(if (selected == null) "Ajouter une nourriture" else "Modifier la nourriture") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (products.none { !it.deleted }) {
-                    Text("Ajoute un produit pour le réutiliser dans tes programmes.")
-                }
-                products.filterNot { it.deleted }.forEach { product ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${pateEmoji(product.pateKey)} ${product.name}", fontWeight = FontWeight.Bold)
-                            Text(
-                                listOfNotNull(
-                                    when (product.kind) {
-                                        "poulet" -> "Poulet"
-                                        "boeuf" -> "Bœuf"
-                                        else -> "Autre"
-                                    },
-                                    product.brand,
-                                    "${product.packPrice} €/sachet",
-                                    product.weight.takeIf { it.isNotBlank() }?.let { "$it g" },
-                                ).joinToString(" · "),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        TextButton(onClick = {
-                            selectedId = product.id
-                            name = product.name
-                            kind = product.kind
-                            brand = product.brand
-                            price = product.packPrice
-                            weight = product.weight
-                        }) { Text("Modifier") }
-                    }
-                }
-                Text(if (selected == null) "Nouveau produit" else "Modifier le produit", fontWeight = FontWeight.Bold)
                 OutlinedTextField(name, { name = it }, label = { Text("Nom de la nourriture") }, singleLine = true)
                 OutlinedTextField(brand, { brand = it }, label = { Text("Marque") }, singleLine = true)
                 OutlinedTextField(
