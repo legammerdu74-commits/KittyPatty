@@ -245,6 +245,8 @@ object Store {
             listOf(
                 e.copy(
                     status = Status.DONE,
+                    deleted = false,
+                    permanentlyDeleted = false,
                     givenPate = givenPate,
                     givenQty = givenQty,
                     note = note,
@@ -271,6 +273,8 @@ object Store {
             listOf(
                 e.copy(
                     status = Status.SKIPPED,
+                    deleted = false,
+                    permanentlyDeleted = false,
                     givenPate = "",
                     givenQty = "",
                     doneAt = System.currentTimeMillis(),
@@ -278,6 +282,64 @@ object Store {
                 )
             )
         )
+    }
+
+    fun deleteEntry(id: String) {
+        mutate { state ->
+            val entry = state.entries.firstOrNull { it.id == id } ?: return@mutate state
+            if (entry.status == Status.PENDING) return@mutate state
+            val now = System.currentTimeMillis()
+            val plannedTypeId = entry.foodTypeId.ifEmpty { entry.pate }
+            val existingProduct = state.products.firstOrNull {
+                it.id == entry.productId && !it.deleted && it.pateKey == plannedTypeId
+            }
+            val plannedProductId = entry.plannedProductId.ifEmpty {
+                existingProduct?.id ?: state.products.firstOrNull {
+                    !it.deleted && (it.id == plannedTypeId || it.pateKey == plannedTypeId)
+                }?.id.orEmpty()
+            }
+            val future = entry.at > now
+            val cleared = entry.copy(
+                status = Status.PENDING,
+                givenPate = "",
+                givenQty = "",
+                note = "",
+                doneAt = 0L,
+                deleted = !future,
+                updatedAt = now,
+                photo = "",
+                productId = plannedProductId,
+                plannedProductId = plannedProductId,
+                givenFoodTypeId = "",
+                givenFoodTypeName = "",
+                givenFoodTypeEmoji = "",
+            )
+            state.copy(entries = state.entries.map { if (it.id == id) cleared else it })
+        }
+    }
+
+    fun permanentlyDeleteEntry(id: String) {
+        mutate { state ->
+            val entry = state.entries.firstOrNull { it.id == id } ?: return@mutate state
+            val now = System.currentTimeMillis()
+            val removed = entry.copy(
+                status = Status.PENDING,
+                givenPate = "",
+                givenQty = "",
+                note = "",
+                doneAt = 0L,
+                deleted = true,
+                updatedAt = now,
+                photo = "",
+                givenFoodTypeId = "",
+                givenFoodTypeName = "",
+                givenFoodTypeEmoji = "",
+                productId = entry.plannedProductId.ifEmpty { entry.foodTypeId },
+                catIds = emptyList(),
+                permanentlyDeleted = true,
+            )
+            state.copy(entries = state.entries.map { if (it.id == id) removed else it })
+        }
     }
 
     /** Fusionne ce que renvoie le serveur : le plus récent (updatedAt) gagne. */

@@ -97,3 +97,15 @@ Le serveur est prévu pour ton **réseau local** (pas de HTTPS). Ne l'expose pas
 2. Rouvre le projet, laisse le « Gradle sync » se faire, puis relance ▶ sur ton téléphone (installe **par-dessus** l'ancienne version : tes programmes et ton historique sont conservés).
 3. Ton chat actuel est repris automatiquement dans la liste des chats ; renomme-le ou ajoute-en d'autres dans l'onglet « Chats ».
 4. Si tu utilises le serveur, remplace aussi le dossier `server` sur ton Debian et relance-le (`sudo systemctl restart chat-pate`). Tant que tu ne l'as pas fait, l'appli marche mais les chats ne sont pas sauvegardés côté serveur.
+
+---
+
+## Logo et icônes
+
+Le logo (un bol en forme de tête de chat) et toutes les icônes de l'appli (onglets, boutons) sont dessinés dans `design/icons.py` et convertis au format Android par `design/generate.py` :
+
+```bash
+python3 design/generate.py
+```
+
+Un aperçu est dans `design/apercu-logos.png`. L'icône de l'appli existe aussi en version monochrome (thème d'icônes d'Android 13+) et sert de petite icône de notification.

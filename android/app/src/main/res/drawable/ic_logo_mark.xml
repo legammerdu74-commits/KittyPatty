@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Logo monochrome rogné : icône de notification et en-tête de l'appli. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="72"
+    android:viewportHeight="72">
+    <group
+        android:translateX="-18"
+        android:translateY="-18">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M25 49 L27.2 26 Q27.9 23 30.5 24.7 L44.5 35.4 Q54 33.2 63.5 35.4 L77.5 24.7 Q80.1 23 80.8 26 L83 49 C83 69 73.5 80 54 80 C34.5 80 25 69 25 49 Z M42.5 79 H65.5 L67.6 83.6 Q67.9 85 66.4 85 H41.6 Q40.1 85 40.4 83.6 Z M39.9 60 a3.1 4.2 0 1 0 6.2 0 a3.1 4.2 0 1 0 -6.2 0 Z M61.9 60 a3.1 4.2 0 1 0 6.2 0 a3.1 4.2 0 1 0 -6.2 0 Z M51.6 67.8 H56.4 Q57.2 67.8 56.7 68.5 L54.8 71 Q54 71.8 53.2 71 L51.3 68.5 Q50.8 67.8 51.6 67.8 Z M27.6 46.6 Q54 53.4 80.4 46.6 V50 Q54 57 27.6 50 Z" />
+    </group>
+</vector>

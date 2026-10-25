@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -26,6 +27,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -42,6 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.time.Instant
@@ -279,48 +283,17 @@ fun ProductCatalogDialog(
     var brand by remember(initialProductId) { mutableStateOf(initialProduct?.brand.orEmpty()) }
     var price by remember(initialProductId) { mutableStateOf(initialProduct?.packPrice.orEmpty()) }
     var weight by remember(initialProductId) { mutableStateOf(initialProduct?.weight.orEmpty()) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     val selected = products.firstOrNull { it.id == selectedId && !it.deleted }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Catalogue de nourriture") },
+        title = { Text(if (selected == null) "Ajouter une nourriture" else "Modifier la nourriture") },
         text = {
             Column(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (products.none { !it.deleted }) {
-                    Text("Ajoute un produit pour le réutiliser dans tes programmes.")
-                }
-                products.filterNot { it.deleted }.forEach { product ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text("${pateEmoji(product.pateKey)} ${product.name}", fontWeight = FontWeight.Bold)
-                            Text(
-                                listOfNotNull(
-                                    when (product.kind) {
-                                        "poulet" -> "Poulet"
-                                        "boeuf" -> "Bœuf"
-                                        else -> "Autre"
-                                    },
-                                    product.brand,
-                                    "${product.packPrice} €/sachet",
-                                    product.weight.takeIf { it.isNotBlank() }?.let { "$it g" },
-                                ).joinToString(" · "),
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                        TextButton(onClick = {
-                            selectedId = product.id
-                            name = product.name
-                            kind = product.kind
-                            brand = product.brand
-                            price = product.packPrice
-                            weight = product.weight
-                        }) { Text("Modifier") }
-                    }
-                }
-                Text(if (selected == null) "Nouveau produit" else "Modifier le produit", fontWeight = FontWeight.Bold)
                 OutlinedTextField(name, { name = it }, label = { Text("Nom de la nourriture") }, singleLine = true)
                 OutlinedTextField(brand, { brand = it }, label = { Text("Marque") }, singleLine = true)
                 OutlinedTextField(
@@ -340,56 +313,99 @@ fun ProductCatalogDialog(
             }
         },
         confirmButton = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (selected != null && selected.id !in setOf("poulet", "boeuf")) {
-                    TextButton(onClick = {
-                        onDelete(selected.id)
-                        selectedId = null
-                        name = ""
-                        brand = ""
-                        price = ""
-                        weight = ""
-                    }) { Text("Supprimer") }
-                }
-                Button(
-                    enabled = name.isNotBlank() && brand.isNotBlank() &&
-                        (price.replace(',', '.').toDoubleOrNull()?.let { it >= 0 } == true) &&
-                        (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true),
-                    onClick = {
-                        onSave(
-                            FoodProduct(
-                                id = selectedId ?: UUID.randomUUID().toString().take(8),
-                                name = name.trim(),
-                                kind = kind,
-                                brand = brand.trim(),
-                                packPrice = price.trim().replace(',', '.'),
-                                weight = weight.trim().replace(',', '.'),
+            Column(Modifier.fillMaxWidth()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (selectedId != null) {
+                        OutlinedButton(
+                            onClick = {
+                                selectedId = null
+                                name = ""
+                                kind = "sachet"
+                                brand = ""
+                                price = ""
+                                weight = ""
+                            },
+                        ) {
+                            Icon(
+                                painterResource(R.drawable.ic_action_plus),
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
                             )
-                        )
-                        selectedId = null
-                        name = ""
-                        brand = ""
-                        price = ""
-                        weight = ""
-                    },
-                ) { Text(if (selected == null) "Ajouter" else "Enregistrer") }
-            }
-        },
-        dismissButton = {
-            Row {
-                if (selectedId != null) {
-                    TextButton(onClick = {
-                        selectedId = null
-                        name = ""
-                        brand = ""
-                        price = ""
-                        weight = ""
-                    }) { Text("Nouveau") }
+                            Text(" Nouveau")
+                        }
+                    }
+                    Spacer(Modifier.weight(1f))
+                    if (selected != null && selected.id !in setOf("poulet", "boeuf")) {
+                        IconButton(onClick = { showDeleteConfirmation = true }) {
+                            Icon(
+                                painterResource(R.drawable.ic_action_delete),
+                                contentDescription = "Supprimer cette nourriture",
+                                tint = MaterialTheme.colorScheme.error,
+                            )
+                        }
+                    } else {
+                        Spacer(Modifier.size(48.dp))
+                    }
                 }
-                TextButton(onClick = onDismiss) { Text("Fermer") }
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Fermer") }
+                    Button(
+                        enabled = name.isNotBlank() && brand.isNotBlank() &&
+                            (price.replace(',', '.').toDoubleOrNull()?.let { it >= 0 } == true) &&
+                            (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true),
+                        onClick = {
+                            onSave(
+                                FoodProduct(
+                                    id = selectedId ?: UUID.randomUUID().toString().take(8),
+                                    name = name.trim(),
+                                    kind = kind,
+                                    brand = brand.trim(),
+                                    packPrice = price.trim().replace(',', '.'),
+                                    weight = weight.trim().replace(',', '.'),
+                                )
+                            )
+                            onDismiss()
+                        },
+                    ) { Text(if (selected == null) "Ajouter" else "Enregistrer") }
+                }
             }
         },
     )
+
+    if (showDeleteConfirmation && selected != null) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("Supprimer cette nourriture ?") },
+            text = { Text("« ${selected.name} » sera retirée du catalogue et des combinaisons qui l’utilisent.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete(selected.id)
+                        selectedId = null
+                        name = ""
+                        kind = "sachet"
+                        brand = ""
+                        price = ""
+                        weight = ""
+                        showDeleteConfirmation = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error,
+                    ),
+                ) { Text("Supprimer") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) { Text("Annuler") }
+            },
+        )
+    }
 }
 
 @Composable
@@ -502,6 +518,8 @@ fun EncodeDialog(
     foodTypes: List<FoodType>,
     onSave: (pate: String, qty: String, note: String, doneAt: Long, catIds: List<String>, photo: String, productId: String, foodTypeId: String) -> Unit,
     onSkip: () -> Unit,
+    onDelete: () -> Unit,
+    onDeletePermanently: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     val ctx = LocalContext.current
@@ -543,6 +561,8 @@ fun EncodeDialog(
     }
 
     val doneDt = Instant.ofEpochMilli(doneAt).atZone(zone)
+    var confirmDelete by remember(entry.id) { mutableStateOf(false) }
+    var confirmPermanentDelete by remember(entry.id) { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -559,7 +579,6 @@ fun EncodeDialog(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-
                 if (cats.size > 1) {
                     Text("Quel(s) chat(s) ?", fontWeight = FontWeight.Bold)
                     CatPicker(cats, catIds) { catIds = it }
@@ -615,7 +634,7 @@ fun EncodeDialog(
                     placeholder = { Text("ex : a laissé la moitié") },
                 )
                 Text("Photo du repas (facultatif)", fontWeight = FontWeight.Bold)
-                PhotoEditor(photo) { photo = it }
+                PhotoEditor(photo, onChange = { photo = it })
 
                 Text("Donné le", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -648,13 +667,102 @@ fun EncodeDialog(
             }
         },
         confirmButton = {
-            Button(
-                enabled = catIds.isNotEmpty() || cats.isEmpty(),
-                onClick = { onSave(pate, qty.trim(), note.trim(), doneAt, catIds, photo, productId, foodTypeId) },
-            ) { Text("Enregistrer") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                TextButton(onClick = onDismiss) { Text("Annuler") }
+                if ((entry.status != Status.PENDING || entry.deleted) && !entry.permanentlyDeleted) {
+                    IconButton(onClick = { confirmDelete = true }) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_action_delete),
+                            contentDescription = "Supprimer l'encodage",
+                            tint = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.size(48.dp))
+                }
+                Button(
+                    enabled = catIds.isNotEmpty() || cats.isEmpty(),
+                    onClick = { onSave(pate, qty.trim(), note.trim(), doneAt, catIds, photo, productId, foodTypeId) },
+                ) { Text("Enregistrer") }
+            }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+        dismissButton = {},
     )
+    if (confirmDelete) {
+        val future = entry.at > System.currentTimeMillis()
+        AlertDialog(
+            onDismissRequest = { confirmDelete = false },
+            title = { Text(if (entry.deleted) "Supprimer entièrement ce repas ?" else "Que veux-tu supprimer ?") },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Text(
+                        text = when {
+                            entry.deleted -> "Le repas et ses données seront retirés du calendrier et de l'historique."
+                            future -> "Le repas sera rétabli comme repas à venir."
+                            else -> "Tu peux effacer uniquement les données saisies ou supprimer entièrement ce repas du calendrier et de l'historique."
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    if (entry.deleted || !future) {
+                        OutlinedButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = if (entry.deleted) {
+                                { confirmDelete = false; confirmPermanentDelete = true }
+                            } else onDelete,
+                        ) {
+                            Text(if (entry.deleted) "Supprimer entièrement" else "Supprimer l'encodage")
+                        }
+                        if (!entry.deleted) {
+                            OutlinedButton(
+                                modifier = Modifier.fillMaxWidth(),
+                                onClick = {
+                                    confirmDelete = false
+                                    confirmPermanentDelete = true
+                                },
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            ) {
+                                Text("Supprimer entièrement")
+                            }
+                        }
+                    } else {
+                        Button(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = onDelete,
+                        ) {
+                            Text("Rétablir le repas")
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Annuler") } },
+        )
+    }
+    if (confirmPermanentDelete) {
+        AlertDialog(
+            onDismissRequest = { confirmPermanentDelete = false },
+            title = { Text("Confirmer la suppression entière ?") },
+            text = {
+                Text("Ce repas et toutes ses données seront définitivement retirés du calendrier et de l'historique. Cette action est irréversible.")
+            },
+            confirmButton = {
+                TextButton(onClick = onDeletePermanently) {
+                    Text("Supprimer entièrement", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmPermanentDelete = false }) { Text("Annuler") }
+            },
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -687,7 +795,7 @@ fun CatDialog(
                     singleLine = true,
                 )
                 Text("Photo de profil (facultatif)", fontWeight = FontWeight.Bold)
-                PhotoEditor(photo) { photo = it }
+                PhotoEditor(photo, onChange = { photo = it }, squareCropOnly = true)
                 Text("Couleur", fontWeight = FontWeight.Bold)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),

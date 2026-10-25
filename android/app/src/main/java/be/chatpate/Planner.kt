@@ -62,6 +62,7 @@ object Planner {
                 wanted.add(id)
 
                 val ex = byId[id]
+                if (ex?.permanentlyDeleted == true) continue
                 if (ex == null) {
                     // On ne crée pas un repas "déjà en retard" juste parce qu'on vient de créer le programme.
                     if (at > now || p.updatedAt < at) {
@@ -69,6 +70,7 @@ object Planner {
                             Entry(
                                 id = id, planId = p.id, at = at, pate = pate, qty = p.qty,
                                 updatedAt = now, catIds = p.catIds, productId = productId,
+                                plannedProductId = productId,
                                 foodTypeId = typeId,
                                 foodTypeName = foodType?.name.orEmpty(),
                                 foodTypeEmoji = foodType?.emoji.orEmpty(),
@@ -78,12 +80,14 @@ object Planner {
                 } else if (ex.status == Status.PENDING && at > now &&
                     (ex.deleted || ex.at != at || ex.pate != pate || ex.qty != p.qty ||
                         ex.catIds != p.catIds || ex.productId != productId ||
+                        ex.plannedProductId != productId ||
                         ex.foodTypeId != typeId || ex.foodTypeName != foodType?.name.orEmpty() ||
                         ex.foodTypeEmoji != foodType?.emoji.orEmpty())
                 ) {
                     changed.add(
                         ex.copy(
                             at = at, pate = pate, qty = p.qty, catIds = p.catIds, productId = productId,
+                            plannedProductId = productId,
                             foodTypeId = typeId,
                             foodTypeName = foodType?.name.orEmpty(),
                             foodTypeEmoji = foodType?.emoji.orEmpty(),
@@ -117,7 +121,12 @@ object Planner {
 
         for (e in st.entries) {
             seen.add(e.id)
-            if (e.deleted || e.at < fromMs || e.at >= toMs) continue
+            if (e.permanentlyDeleted) continue
+            if (e.at < fromMs || e.at >= toMs) continue
+            if (e.deleted) {
+                if (e.status == Status.PENDING && e.at <= now) out.add(e.toOcc())
+                continue
+            }
             out.add(e.toOcc())
         }
 

@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -28,13 +30,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -113,6 +108,9 @@ fun App(openEntry: MutableState<String?>) {
     var showNewCat by remember { mutableStateOf(false) }
     var editCatId by remember { mutableStateOf<String?>(null) }
     var selectedCatId by remember { mutableStateOf<String?>(null) }
+    BackHandler(enabled = tab == 2 && cats.any { it.id == selectedCatId }) {
+        selectedCatId = null
+    }
 
     // Revérifie les autorisations quand on revient dans l'appli.
     var tick by remember { mutableIntStateOf(0) }
@@ -144,40 +142,24 @@ fun App(openEntry: MutableState<String?>) {
             )
         },
         bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = tab == 0, onClick = { tab = 0 },
-                    icon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    label = { Text("Accueil") },
-                )
-                NavigationBarItem(
-                    selected = tab == 1, onClick = { tab = 1 },
-                    icon = { Icon(Icons.Default.Notifications, contentDescription = null) },
-                    label = { Text("Programmes") },
-                )
-                NavigationBarItem(
-                    selected = tab == 2, onClick = { tab = 2 },
-                    icon = { Icon(Icons.Default.Favorite, contentDescription = null) },
-                    label = { Text("Chats") },
-                )
-                NavigationBarItem(
-                    selected = tab == 3, onClick = { tab = 3 },
-                    icon = { Text("🥫") },
-                    label = { Text("Alimentation") },
-                )
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
+                NavTab(tab == 0, { tab = 0 }, R.drawable.ic_nav_home, "Accueil")
+                NavTab(tab == 1, { tab = 1 }, R.drawable.ic_nav_programs, "Programmes")
+                NavTab(tab == 2, { tab = 2 }, R.drawable.ic_nav_cats, "Chats")
+                NavTab(tab == 3, { tab = 3 }, R.drawable.ic_nav_food, "Alimentation")
             }
         },
         floatingActionButton = {
             if (tab == 1) {
                 ExtendedFloatingActionButton(
                     onClick = { showNewPlan = true },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    icon = { Icon(painterResource(R.drawable.ic_action_plus), contentDescription = null) },
                     text = { Text("Programme") },
                 )
             } else if (tab == 2 && cats.none { it.id == selectedCatId }) {
                 ExtendedFloatingActionButton(
                     onClick = { showNewCat = true },
-                    icon = { Icon(Icons.Default.Add, contentDescription = null) },
+                    icon = { Icon(painterResource(R.drawable.ic_action_plus), contentDescription = null) },
                     text = { Text("Chat") },
                 )
             }
@@ -288,7 +270,7 @@ fun App(openEntry: MutableState<String?>) {
         )
     }
 
-    val entryToEncode = state.entries.firstOrNull { it.id == encodeId && !it.deleted }
+    val entryToEncode = state.entries.firstOrNull { it.id == encodeId }
     if (entryToEncode != null) {
         EncodeDialog(
             entry = entryToEncode,
@@ -303,6 +285,18 @@ fun App(openEntry: MutableState<String?>) {
             },
             onSkip = {
                 Store.markSkipped(entryToEncode.id)
+                Notifier.cancel(ctx, entryToEncode.id)
+                Planner.afterChange(ctx)
+                encodeId = null
+            },
+            onDelete = {
+                Store.deleteEntry(entryToEncode.id)
+                Notifier.cancel(ctx, entryToEncode.id)
+                Planner.afterChange(ctx)
+                encodeId = null
+            },
+            onDeletePermanently = {
+                Store.permanentlyDeleteEntry(entryToEncode.id)
                 Notifier.cancel(ctx, entryToEncode.id)
                 Planner.afterChange(ctx)
                 encodeId = null
@@ -382,7 +376,7 @@ fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
-                    painterResource(R.drawable.ic_paw),
+                    painterResource(R.drawable.ic_logo_mark),
                     contentDescription = null,
                     tint = c.onPrimary,
                     modifier = Modifier.size(26.dp),
@@ -405,12 +399,40 @@ fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
                 }
             }
             IconButton(onClick = onSync) {
-                Icon(Icons.Default.Refresh, contentDescription = "Synchroniser", tint = c.onPrimaryContainer)
+                Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = "Synchroniser", tint = c.onPrimaryContainer)
             }
             IconButton(onClick = onSettings) {
-                Icon(Icons.Default.Settings, contentDescription = "Réglages", tint = c.onPrimaryContainer)
+                Icon(painterResource(R.drawable.ic_action_settings), contentDescription = "Réglages", tint = c.onPrimaryContainer)
             }
         }
+    }
+}
+
+/** Un onglet de la barre du bas : icône de la famille + libellé sur une ligne. */
+@Composable
+private fun RowScope.NavTab(selected: Boolean, onClick: () -> Unit, icon: Int, label: String) {
+    NavigationBarItem(
+        selected = selected,
+        onClick = onClick,
+        icon = { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp)) },
+        label = {
+            Text(
+                label,
+                maxLines = 1,
+                style = MaterialTheme.typography.labelSmall,
+                fontWeight = FontWeight.Medium,
+            )
+        },
+    )
+}
+
+/** Icône + texte à l'intérieur d'un bouton. */
+@Composable
+private fun ButtonLabel(icon: Int, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
     }
 }
 
@@ -426,15 +448,27 @@ fun SectionTitle(text: String) {
 }
 
 @Composable
-fun EmptyState(emoji: String, text: String) {
+fun EmptyState(icon: Int, text: String) {
     Column(
         Modifier
             .fillMaxWidth()
             .padding(vertical = 28.dp, horizontal = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(emoji, fontSize = 40.sp)
-        Spacer(Modifier.height(8.dp))
+        Box(
+            Modifier
+                .size(72.dp)
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f), CircleShape),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                painterResource(icon),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(36.dp),
+            )
+        }
+        Spacer(Modifier.height(12.dp))
         Text(
             text,
             textAlign = TextAlign.Center,
@@ -586,6 +620,14 @@ fun MealCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
+                if (e?.deleted == true) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Encodage supprimé · tu peux le saisir à nouveau",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
                 if (e != null && e.note.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(e.note, style = MaterialTheme.typography.bodyMedium)
@@ -603,9 +645,11 @@ fun MealCard(
                 if (pending && e != null && onOpen != null) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = { onOpen(e.id) }) { Text(if (overdue) "Encoder" else "Donné") }
+                        Button(onClick = { onOpen(e.id) }, modifier = Modifier.height(48.dp)) {
+                            Text(if (e.deleted) "Encoder à nouveau" else if (overdue) "Encoder" else "Donné")
+                        }
                         if (onSkip != null) {
-                            TextButton(onClick = { onSkip(e.id) }) { Text("Passer") }
+                            TextButton(onClick = { onSkip(e.id) }, modifier = Modifier.height(48.dp)) { Text("Passer") }
                         }
                     }
                 }
@@ -728,7 +772,7 @@ fun HomeScreen(
             item { SectionTitle(Fmt.dayFull(day)) }
             val list = byDay[day].orEmpty()
             if (list.isEmpty()) {
-                item { EmptyState("😺", "Aucun repas ce jour-là.") }
+                item { EmptyState(R.drawable.ic_nav_cats, "Aucun repas ce jour-là.") }
             } else {
                 items(list, key = { "d_" + it.id }) { o ->
                     MealCard(o, cats, products, now, onOpen, onSkip)
@@ -739,7 +783,7 @@ fun HomeScreen(
             if (upcoming.isEmpty()) {
                 item {
                     EmptyState(
-                        "🐈",
+                        R.drawable.ic_nav_programs,
                         "Aucun repas programmé pour le moment.\nVa dans « Programmes » pour en créer un."
                     )
                 }
@@ -820,7 +864,9 @@ fun CalendarCard(
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = onPrev) { Text("‹", fontSize = 22.sp) }
+                IconButton(onClick = onPrev) {
+                    Icon(painterResource(R.drawable.ic_action_chevron_left), contentDescription = "Mois précédent")
+                }
                 Text(
                     Fmt.monthTitle(month),
                     style = MaterialTheme.typography.titleMedium,
@@ -830,7 +876,9 @@ fun CalendarCard(
                         .weight(1f)
                         .clickable { onToday() },
                 )
-                TextButton(onClick = onNext) { Text("›", fontSize = 22.sp) }
+                IconButton(onClick = onNext) {
+                    Icon(painterResource(R.drawable.ic_action_chevron_right), contentDescription = "Mois suivant")
+                }
             }
             Row(Modifier.fillMaxWidth()) {
                 WeekDays.forEach {
@@ -843,7 +891,13 @@ fun CalendarCard(
                     )
                 }
             }
-            ChatFilterDropdown(cats, selectedCatId, onCatSelected)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                if (cats.size > 1) ChatFilterDropdown(cats, selectedCatId, onCatSelected)
+                Spacer(Modifier.weight(1f))
+                if (month != YearMonth.from(today) || selected != today) {
+                    TextButton(onClick = onToday) { Text("Aujourd'hui") }
+                }
+            }
             Spacer(Modifier.height(4.dp))
 
             val first = month.atDay(1)
@@ -894,7 +948,11 @@ private fun ChatFilterDropdown(
     var expanded by remember { mutableStateOf(false) }
     val selectedName = cats.firstOrNull { it.id == selectedCatId }?.name ?: "Tous les chats"
     Box {
-        TextButton(onClick = { expanded = true }) { Text("Afficher : $selectedName ▾") }
+        TextButton(onClick = { expanded = true }) {
+            Text("Afficher : $selectedName")
+            Spacer(Modifier.width(4.dp))
+            Icon(painterResource(R.drawable.ic_action_chevron_down), contentDescription = null, modifier = Modifier.size(18.dp))
+        }
         DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
             DropdownMenuItem(
                 text = { Text("Tous les chats") },
@@ -1011,7 +1069,7 @@ fun PlansScreen(
         if (plans.isEmpty()) {
             item {
                 EmptyState(
-                    "🐟",
+                    R.drawable.ic_nav_programs,
                     "Aucun programme.\nAppuie sur « Programme » pour créer par exemple :\n« tous les jours à 8h00, pâtée au poulet »."
                 )
             }
@@ -1109,52 +1167,28 @@ private fun FoodManagementScreen(
             if (category == 0) {
                 Button(
                     onClick = { category = 0 },
-                    modifier = Modifier.weight(1f).height(56.dp),
+                    modifier = Modifier.weight(1f).height(52.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        Text("🥫", fontSize = 18.sp)
-                        Spacer(Modifier.width(5.dp))
-                        Text("Nourriture", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                    }
-                }
+                ) { ButtonLabel(R.drawable.ic_nav_food, "Nourriture") }
             } else {
                 OutlinedButton(
                     onClick = { category = 0 },
-                    modifier = Modifier.weight(1f).height(56.dp),
+                    modifier = Modifier.weight(1f).height(52.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        Text("🥫", fontSize = 18.sp)
-                        Spacer(Modifier.width(5.dp))
-                        Text("Nourriture", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                    }
-                }
+                ) { ButtonLabel(R.drawable.ic_nav_food, "Nourriture") }
             }
             if (category == 1) {
                 Button(
                     onClick = { category = 1 },
-                    modifier = Modifier.weight(1f).height(56.dp),
+                    modifier = Modifier.weight(1f).height(52.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        Text("🔁", fontSize = 18.sp)
-                        Spacer(Modifier.width(5.dp))
-                        Text("Combinaisons", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                    }
-                }
+                ) { ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons") }
             } else {
                 OutlinedButton(
                     onClick = { category = 1 },
-                    modifier = Modifier.weight(1f).height(56.dp),
+                    modifier = Modifier.weight(1f).height(52.dp),
                     contentPadding = PaddingValues(horizontal = 8.dp),
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                        Text("🔁", fontSize = 18.sp)
-                        Spacer(Modifier.width(5.dp))
-                        Text("Combinaisons", style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
-                    }
-                }
+                ) { ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons") }
             }
         }
 
@@ -1173,7 +1207,7 @@ private fun FoodManagementScreen(
                     }
                 }
                 if (products.isEmpty()) {
-                    item { EmptyState("🥫", "Ajoute une nourriture pour la retrouver dans tes programmes.") }
+                    item { EmptyState(R.drawable.ic_nav_food, "Ajoute une nourriture pour la retrouver dans tes programmes.") }
                 }
                 items(products, key = { it.id }) { product ->
                     Card(
@@ -1412,7 +1446,7 @@ fun CatsScreen(
                 )
             }
             if (history.isEmpty()) {
-                item { EmptyState("😸", "Rien dans l'historique pour ce chat pour l'instant.") }
+                item { EmptyState(R.drawable.ic_nav_cats, "Rien dans l'historique pour ce chat pour l'instant.") }
             } else {
                 items(history, key = { it.id }) { entry ->
                     MealCard(entry.toOcc(), cats, products, now, onOpenEntry, null)

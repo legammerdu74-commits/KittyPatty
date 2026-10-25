@@ -76,7 +76,8 @@ object Notifier {
         )
 
         val n = NotificationCompat.Builder(ctx, CHANNEL)
-            .setSmallIcon(R.drawable.ic_paw)
+            .setSmallIcon(R.drawable.ic_logo_mark)
+            .setColor(0xFF9A4E12.toInt())
             .setContentTitle(title)
             .setContentText(text)
             .setSubText(hour)

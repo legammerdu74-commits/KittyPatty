@@ -283,12 +283,14 @@ data class Entry(
     val catIds: List<String> = emptyList(),
     val photo: String = "",
     val productId: String = "",
+    val plannedProductId: String = "",
     val foodTypeId: String = "",
     val foodTypeName: String = "",
     val foodTypeEmoji: String = "",
     val givenFoodTypeId: String = "",
     val givenFoodTypeName: String = "",
     val givenFoodTypeEmoji: String = "",
+    val permanentlyDeleted: Boolean = false,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -306,12 +308,14 @@ data class Entry(
         .put("catIds", jsonArrayOf(catIds))
         .put("photo", photo)
         .put("productId", productId)
+        .put("plannedProductId", plannedProductId)
         .put("foodTypeId", foodTypeId)
         .put("foodTypeName", foodTypeName)
         .put("foodTypeEmoji", foodTypeEmoji)
         .put("givenFoodTypeId", givenFoodTypeId)
         .put("givenFoodTypeName", givenFoodTypeName)
         .put("givenFoodTypeEmoji", givenFoodTypeEmoji)
+        .put("permanentlyDeleted", permanentlyDeleted)
 
     companion object {
         fun fromJson(o: JSONObject): Entry = Entry(
@@ -330,12 +334,14 @@ data class Entry(
             catIds = strList(o.optJSONArray("catIds")),
             photo = o.optString("photo", ""),
             productId = o.optString("productId", ""),
+            plannedProductId = o.optString("plannedProductId", ""),
             foodTypeId = o.optString("foodTypeId", ""),
             foodTypeName = o.optString("foodTypeName", ""),
             foodTypeEmoji = o.optString("foodTypeEmoji", ""),
             givenFoodTypeId = o.optString("givenFoodTypeId", ""),
             givenFoodTypeName = o.optString("givenFoodTypeName", ""),
             givenFoodTypeEmoji = o.optString("givenFoodTypeEmoji", ""),
+            permanentlyDeleted = o.optBoolean("permanentlyDeleted", false),
         )
     }
 }
