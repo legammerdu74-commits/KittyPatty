@@ -631,7 +631,7 @@ fun EncodeDialog(
                     placeholder = { Text("ex : a laissé la moitié") },
                 )
                 Text("Photo du repas (facultatif)", fontWeight = FontWeight.Bold)
-                PhotoEditor(photo) { photo = it }
+                PhotoEditor(photo, onChange = { photo = it })
 
                 Text("Donné le", fontWeight = FontWeight.Bold)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -703,7 +703,7 @@ fun CatDialog(
                     singleLine = true,
                 )
                 Text("Photo de profil (facultatif)", fontWeight = FontWeight.Bold)
-                PhotoEditor(photo) { photo = it }
+                PhotoEditor(photo, onChange = { photo = it }, squareCropOnly = true)
                 Text("Couleur", fontWeight = FontWeight.Bold)
                 FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
