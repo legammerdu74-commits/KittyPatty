@@ -44,15 +44,59 @@ object Store {
             if (f.exists()) {
                 runCatching {
                     val o = JSONObject(f.readText())
+                    val foodTypes = parseFoodTypes(o.optJSONArray("foodTypes")).ifEmpty { defaultFoodTypes() }
+                    val products = ensureFoodProducts(
+                        parseProducts(o.optJSONArray("products")),
+                        foodTypes,
+                    )
+                    val plans = parsePlans(o.optJSONArray("plans")).map { plan ->
+                        val legacyFood = products.firstOrNull {
+                            it.id == plan.pate && !it.deleted
+                        }
+                        if (plan.productId.isEmpty() && plan.patternId.isEmpty() &&
+                            !plan.alternatePate && legacyFood != null
+                        ) plan.copy(productId = legacyFood.id) else plan
+                    }
                     _state.value = AppState(
-                        plans = parsePlans(o.optJSONArray("plans")),
+                        plans = plans,
                         entries = parseEntries(o.optJSONArray("entries")),
                         cats = parseCats(o.optJSONArray("cats")),
+                        products = products,
+                        foodTypes = foodTypes,
+                        foodPatterns = ensureFoodPatterns(parseFoodPatterns(o.optJSONArray("foodPatterns"))),
                     )
                 }
+
             }
         }
     }
+
+    private fun ensureFoodProducts(products: List<FoodProduct>, types: List<FoodType>): List<FoodProduct> {
+        val byId = LinkedHashMap<String, FoodProduct>()
+        (products + defaultFoodProducts()).forEach {
+            if (it.id !in byId) byId[it.id] = it
+        }
+        types.filterNot { it.deleted }.forEach { type ->
+            if (type.id !in byId) {
+                byId[type.id] = FoodProduct(
+                    id = type.id,
+                    name = type.name,
+                    kind = when (type.id) {
+                        "poulet" -> "poulet"
+                        "boeuf" -> "boeuf"
+                        else -> "sachet"
+                    },
+                    brand = "",
+                    packPrice = "",
+                    updatedAt = type.updatedAt,
+                )
+            }
+        }
+        return byId.values.toList()
+    }
+
+    private fun ensureFoodPatterns(patterns: List<FoodPattern>): List<FoodPattern> =
+        (patterns + defaultFoodPatterns()).distinctBy { it.id }
 
     fun snapshot(): AppState = _state.value
 
@@ -82,6 +126,71 @@ object Store {
         mutate { s ->
             val exists = s.cats.any { it.id == nc.id }
             s.copy(cats = if (exists) s.cats.map { if (it.id == nc.id) nc else it } else s.cats + nc)
+        }
+    }
+
+    fun upsertProduct(product: FoodProduct) {
+        val updated = product.copy(updatedAt = System.currentTimeMillis())
+        mutate { state ->
+            val exists = state.products.any { it.id == updated.id }
+            state.copy(products = if (exists) {
+                state.products.map { if (it.id == updated.id) updated else it }
+            } else state.products + updated)
+        }
+    }
+
+    fun deleteProduct(id: String) {
+        mutate { state ->
+            val now = System.currentTimeMillis()
+            val patterns = state.foodPatterns.map { pattern ->
+                if (id !in pattern.foodIds) pattern else {
+                    val remainingFoods = pattern.foodIds.filterNot { it == id }
+                    pattern.copy(
+                        foodIds = remainingFoods,
+                        deleted = remainingFoods.size < 2,
+                        updatedAt = now,
+                    )
+                }
+            }
+            state.copy(products = state.products.map {
+                if (it.id == id) it.copy(deleted = true, updatedAt = now) else it
+            }, foodPatterns = patterns)
+        }
+    }
+
+    fun upsertFoodType(type: FoodType) {
+        val updated = type.copy(updatedAt = System.currentTimeMillis())
+        mutate { state ->
+            val exists = state.foodTypes.any { it.id == updated.id }
+            state.copy(foodTypes = if (exists) {
+                state.foodTypes.map { if (it.id == updated.id) updated else it }
+            } else state.foodTypes + updated)
+        }
+    }
+
+    fun deleteFoodType(id: String) {
+        mutate { state ->
+            state.copy(foodTypes = state.foodTypes.map {
+                if (it.id == id) it.copy(deleted = true, updatedAt = System.currentTimeMillis()) else it
+            })
+        }
+    }
+
+    fun upsertFoodPattern(pattern: FoodPattern) {
+        val updated = pattern.copy(updatedAt = System.currentTimeMillis())
+        mutate { state ->
+            val exists = state.foodPatterns.any { it.id == updated.id }
+            state.copy(foodPatterns = if (exists) {
+                state.foodPatterns.map { if (it.id == updated.id) updated else it }
+            } else state.foodPatterns + updated)
+        }
+    }
+
+    fun deleteFoodPattern(id: String) {
+        mutate { state ->
+            state.copy(foodPatterns = state.foodPatterns.map {
+                if (it.id == id) it.copy(deleted = true, updatedAt = System.currentTimeMillis()) else it
+            })
         }
     }
 
@@ -127,6 +236,9 @@ object Store {
         note: String,
         doneAt: Long,
         catIds: List<String>? = null,
+        photo: String? = null,
+        productId: String? = null,
+        foodTypeId: String? = null,
     ) {
         val e = get(id) ?: return
         upsertEntries(
@@ -138,6 +250,15 @@ object Store {
                     note = note,
                     doneAt = doneAt,
                     catIds = catIds ?: e.catIds,
+                    photo = photo ?: e.photo,
+                    productId = productId ?: e.productId,
+                    givenFoodTypeId = foodTypeId ?: e.givenFoodTypeId,
+                    givenFoodTypeName = foodTypeId?.let { typeId ->
+                        _state.value.foodTypes.firstOrNull { it.id == typeId }?.name
+                    } ?: e.givenFoodTypeName,
+                    givenFoodTypeEmoji = foodTypeId?.let { typeId ->
+                        _state.value.foodTypes.firstOrNull { it.id == typeId }?.emoji
+                    } ?: e.givenFoodTypeEmoji,
                     updatedAt = System.currentTimeMillis(),
                 )
             )
@@ -160,7 +281,14 @@ object Store {
     }
 
     /** Fusionne ce que renvoie le serveur : le plus récent (updatedAt) gagne. */
-    fun mergeRemote(remotePlans: List<Plan>, remoteEntries: List<Entry>, remoteCats: List<Cat>): Boolean {
+    fun mergeRemote(
+        remotePlans: List<Plan>,
+        remoteEntries: List<Entry>,
+        remoteCats: List<Cat>,
+        remoteProducts: List<FoodProduct> = emptyList(),
+        remoteFoodTypes: List<FoodType> = emptyList(),
+        remoteFoodPatterns: List<FoodPattern> = emptyList(),
+    ): Boolean {
         var changed = false
         mutate { s ->
             val pm = LinkedHashMap<String, Plan>()
@@ -190,7 +318,41 @@ object Store {
                     changed = true
                 }
             }
-            if (changed) AppState(pm.values.toList(), em.values.toList(), cm.values.toList()) else s
+            val fm = LinkedHashMap<String, FoodProduct>()
+            s.products.forEach { fm[it.id] = it }
+            for (product in remoteProducts) {
+                val local = fm[product.id]
+                if (local == null || product.updatedAt > local.updatedAt) {
+                    fm[product.id] = product
+                    changed = true
+                }
+            }
+            val tm = LinkedHashMap<String, FoodType>()
+            s.foodTypes.forEach { tm[it.id] = it }
+            for (type in remoteFoodTypes) {
+                val local = tm[type.id]
+                if (local == null || type.updatedAt > local.updatedAt) {
+                    tm[type.id] = type
+                    changed = true
+                }
+            }
+            val patternMap = LinkedHashMap<String, FoodPattern>()
+            s.foodPatterns.forEach { patternMap[it.id] = it }
+            for (pattern in remoteFoodPatterns) {
+                val local = patternMap[pattern.id]
+                if (local == null || pattern.updatedAt > local.updatedAt) {
+                    patternMap[pattern.id] = pattern
+                    changed = true
+                }
+            }
+            if (changed) s.copy(
+                plans = pm.values.toList(),
+                entries = em.values.toList(),
+                cats = cm.values.toList(),
+                products = fm.values.toList(),
+                foodTypes = tm.values.toList(),
+                foodPatterns = patternMap.values.toList(),
+            ) else s
         }
         return changed
     }
@@ -215,7 +377,14 @@ object Store {
             s.entries.forEach { entries.put(it.toJson()) }
             val cats = JSONArray()
             s.cats.forEach { cats.put(it.toJson()) }
-            val txt = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats).toString()
+            val products = JSONArray()
+            s.products.forEach { products.put(it.toJson()) }
+            val foodTypes = JSONArray()
+            s.foodTypes.forEach { foodTypes.put(it.toJson()) }
+            val foodPatterns = JSONArray()
+            s.foodPatterns.forEach { foodPatterns.put(it.toJson()) }
+            val txt = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats)
+                .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns).toString()
             val tmp = File(f.parentFile, "state.json.tmp")
             tmp.writeText(txt)
             if (!tmp.renameTo(f)) {

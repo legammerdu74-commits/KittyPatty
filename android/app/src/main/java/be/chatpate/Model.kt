@@ -2,6 +2,8 @@ package be.chatpate
 
 import org.json.JSONArray
 import org.json.JSONObject
+import java.time.LocalDate
+import java.time.temporal.ChronoUnit
 
 /** Les types de pâtée. Pour en ajouter un, il suffit d'ajouter une ligne ici. */
 enum class Pate(val key: String, val label: String, val adj: String, val emoji: String) {
@@ -13,10 +15,121 @@ enum class Pate(val key: String, val label: String, val adj: String, val emoji: 
     }
 }
 
+fun pateLabel(key: String): String = when (key) {
+    "sachet" -> "Sachet"
+    else -> Pate.values().firstOrNull { it.key == key }?.label ?: key
+}
+
+fun pateEmoji(key: String): String = when (key) {
+    "boeuf" -> "🥩"
+    "sachet" -> "🥫"
+    else -> "🍗"
+}
+
+data class FoodType(
+    val id: String,
+    val name: String,
+    val emoji: String,
+    val deleted: Boolean = false,
+    val updatedAt: Long = System.currentTimeMillis(),
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("id", id).put("name", name).put("emoji", emoji)
+        .put("deleted", deleted).put("updatedAt", updatedAt)
+
+    companion object {
+        fun fromJson(o: JSONObject) = FoodType(
+            id = o.getString("id"),
+            name = o.optString("name", ""),
+            emoji = o.optString("emoji", "🥫"),
+            deleted = o.optBoolean("deleted", false),
+            updatedAt = o.optLong("updatedAt", 0L),
+        )
+    }
+}
+
+data class FoodPattern(
+    val id: String,
+    val name: String,
+    val foodIds: List<String>,
+    val deleted: Boolean = false,
+    val updatedAt: Long = System.currentTimeMillis(),
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("id", id).put("name", name).put("foodIds", jsonArrayOf(foodIds))
+        .put("deleted", deleted).put("updatedAt", updatedAt)
+
+    companion object {
+        fun fromJson(o: JSONObject) = FoodPattern(
+            id = o.getString("id"),
+            name = o.optString("name", ""),
+            foodIds = strList(o.optJSONArray("foodIds") ?: o.optJSONArray("typeIds")),
+            deleted = o.optBoolean("deleted", false),
+            updatedAt = o.optLong("updatedAt", 0L),
+        )
+    }
+}
+
+fun defaultFoodTypes() = listOf(
+    FoodType("poulet", "Poulet", "🍗", updatedAt = 1L),
+    FoodType("boeuf", "Bœuf", "🥩", updatedAt = 1L),
+)
+
+fun defaultFoodPatterns() = listOf(
+    FoodPattern("poulet-boeuf", "Poulet → Bœuf", listOf("poulet", "boeuf"), updatedAt = 1L),
+    FoodPattern("boeuf-poulet", "Bœuf → Poulet", listOf("boeuf", "poulet"), updatedAt = 1L),
+)
+
+fun defaultFoodProducts() = listOf(
+    FoodProduct("poulet", "Poulet", "poulet", "", "", updatedAt = 1L),
+    FoodProduct("boeuf", "Bœuf", "boeuf", "", "", updatedAt = 1L),
+)
+
 object Status {
     const val PENDING = "pending"
     const val DONE = "done"
     const val SKIPPED = "skipped"
+}
+
+data class FoodProduct(
+    val id: String,
+    val name: String,
+    val kind: String,
+    val brand: String,
+    val packPrice: String,
+    val weight: String = "",
+    val deleted: Boolean = false,
+    val updatedAt: Long = System.currentTimeMillis(),
+) {
+    val pateKey: String
+        get() = when (kind) {
+            "boeuf" -> Pate.BOEUF.key
+            "poulet" -> Pate.POULET.key
+            else -> "sachet"
+        }
+
+    fun toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("name", name)
+        .put("kind", kind)
+        .put("brand", brand)
+        .put("packPrice", packPrice)
+        .put("weight", weight)
+        .put("deleted", deleted)
+        .put("updatedAt", updatedAt)
+
+    companion object {
+        fun fromJson(o: JSONObject) = FoodProduct(
+            id = o.getString("id"),
+            name = o.optString("name", ""),
+            kind = o.optString("kind", "sachet"),
+            brand = o.optString("brand", ""),
+            packPrice = o.optString("packPrice", ""),
+            weight = o.optString("weight", ""),
+            deleted = o.optBoolean("deleted", false),
+            updatedAt = o.optLong("updatedAt", 0L),
+        )
+    }
 }
 
 /** Un chat. */
@@ -26,6 +139,7 @@ data class Cat(
     val color: Int = 0,            // index dans la palette (voir Theme.kt)
     val deleted: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
+    val photo: String = "",
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -33,6 +147,7 @@ data class Cat(
         .put("color", color)
         .put("deleted", deleted)
         .put("updatedAt", updatedAt)
+        .put("photo", photo)
 
     companion object {
         fun fromJson(o: JSONObject): Cat = Cat(
@@ -41,6 +156,7 @@ data class Cat(
             color = o.optInt("color", 0),
             deleted = o.optBoolean("deleted", false),
             updatedAt = o.optLong("updatedAt", 0L),
+            photo = o.optString("photo", ""),
         )
     }
 }
@@ -70,7 +186,52 @@ data class Plan(
     val deleted: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
     val catIds: List<String> = emptyList(),
+    val alternatePate: Boolean = false,
+    val productId: String = "",
+    val patternId: String = "",
 ) {
+    fun foodTypeOn(date: LocalDate, patterns: List<FoodPattern>): String {
+        val effectivePatternId = patternId.ifEmpty {
+            if (!alternatePate) "" else if (pate == Pate.BOEUF.key) "boeuf-poulet" else "poulet-boeuf"
+        }
+        val pattern = patterns.firstOrNull { it.id == effectivePatternId && !it.deleted }
+        if (pattern != null && pattern.foodIds.isNotEmpty()) {
+            val startDate = runCatching { LocalDate.parse(start) }.getOrNull() ?: return pate
+            val occurrence = ChronoUnit.DAYS.between(startDate, date) / everyDays.coerceAtLeast(1)
+            return pattern.foodIds[(occurrence % pattern.foodIds.size).toInt()]
+                .takeIf { it == Pate.POULET.key || it == Pate.BOEUF.key } ?: pate
+        }
+        if (alternatePate) return pateOn(date)
+        return pate
+    }
+
+    fun foodProductOn(
+        date: LocalDate,
+        patterns: List<FoodPattern>,
+        products: List<FoodProduct>,
+    ): FoodProduct? {
+        val direct = products.firstOrNull { it.id == productId && !it.deleted }
+        if (direct != null) return direct
+        val effectivePatternId = patternId.ifEmpty {
+            if (!alternatePate) "" else if (pate == Pate.BOEUF.key) "boeuf-poulet" else "poulet-boeuf"
+        }
+        val pattern = patterns.firstOrNull { it.id == effectivePatternId && !it.deleted }
+            ?: return null
+        if (pattern.foodIds.isEmpty()) return null
+        val startDate = runCatching { LocalDate.parse(start) }.getOrNull() ?: return null
+        val occurrence = ChronoUnit.DAYS.between(startDate, date) / everyDays.coerceAtLeast(1)
+        val foodId = pattern.foodIds[(occurrence % pattern.foodIds.size).toInt()]
+        return products.firstOrNull { it.id == foodId && !it.deleted }
+    }
+
+    fun pateOn(date: LocalDate): String {
+        if (!alternatePate) return pate
+        val startDate = runCatching { LocalDate.parse(start) }.getOrNull() ?: return pate
+        val occurrence = ChronoUnit.DAYS.between(startDate, date) / everyDays.coerceAtLeast(1)
+        if (occurrence % 2L == 0L) return pate
+        return if (pate == Pate.BOEUF.key) Pate.POULET.key else Pate.BOEUF.key
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
         .put("timeMin", timeMin)
@@ -82,6 +243,9 @@ data class Plan(
         .put("deleted", deleted)
         .put("updatedAt", updatedAt)
         .put("catIds", jsonArrayOf(catIds))
+        .put("alternatePate", alternatePate)
+        .put("productId", productId)
+        .put("patternId", patternId)
 
     companion object {
         fun fromJson(o: JSONObject): Plan = Plan(
@@ -95,6 +259,9 @@ data class Plan(
             deleted = o.optBoolean("deleted", false),
             updatedAt = o.optLong("updatedAt", 0L),
             catIds = strList(o.optJSONArray("catIds")),
+            alternatePate = o.optBoolean("alternatePate", false),
+            productId = o.optString("productId", ""),
+            patternId = o.optString("patternId", ""),
         )
     }
 }
@@ -114,6 +281,14 @@ data class Entry(
     val deleted: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
     val catIds: List<String> = emptyList(),
+    val photo: String = "",
+    val productId: String = "",
+    val foodTypeId: String = "",
+    val foodTypeName: String = "",
+    val foodTypeEmoji: String = "",
+    val givenFoodTypeId: String = "",
+    val givenFoodTypeName: String = "",
+    val givenFoodTypeEmoji: String = "",
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -129,6 +304,14 @@ data class Entry(
         .put("deleted", deleted)
         .put("updatedAt", updatedAt)
         .put("catIds", jsonArrayOf(catIds))
+        .put("photo", photo)
+        .put("productId", productId)
+        .put("foodTypeId", foodTypeId)
+        .put("foodTypeName", foodTypeName)
+        .put("foodTypeEmoji", foodTypeEmoji)
+        .put("givenFoodTypeId", givenFoodTypeId)
+        .put("givenFoodTypeName", givenFoodTypeName)
+        .put("givenFoodTypeEmoji", givenFoodTypeEmoji)
 
     companion object {
         fun fromJson(o: JSONObject): Entry = Entry(
@@ -145,6 +328,14 @@ data class Entry(
             deleted = o.optBoolean("deleted", false),
             updatedAt = o.optLong("updatedAt", 0L),
             catIds = strList(o.optJSONArray("catIds")),
+            photo = o.optString("photo", ""),
+            productId = o.optString("productId", ""),
+            foodTypeId = o.optString("foodTypeId", ""),
+            foodTypeName = o.optString("foodTypeName", ""),
+            foodTypeEmoji = o.optString("foodTypeEmoji", ""),
+            givenFoodTypeId = o.optString("givenFoodTypeId", ""),
+            givenFoodTypeName = o.optString("givenFoodTypeName", ""),
+            givenFoodTypeEmoji = o.optString("givenFoodTypeEmoji", ""),
         )
     }
 }
@@ -153,6 +344,9 @@ data class AppState(
     val plans: List<Plan> = emptyList(),
     val entries: List<Entry> = emptyList(),
     val cats: List<Cat> = emptyList(),
+    val products: List<FoodProduct> = defaultFoodProducts(),
+    val foodTypes: List<FoodType> = defaultFoodTypes(),
+    val foodPatterns: List<FoodPattern> = defaultFoodPatterns(),
 )
 
 fun parsePlans(arr: JSONArray?): List<Plan> {
@@ -180,4 +374,28 @@ fun parseCats(arr: JSONArray?): List<Cat> {
         runCatching { out.add(Cat.fromJson(arr.getJSONObject(i))) }
     }
     return out
+}
+
+fun parseProducts(arr: JSONArray?): List<FoodProduct> {
+    if (arr == null) return emptyList()
+    val out = ArrayList<FoodProduct>()
+    for (i in 0 until arr.length()) {
+        runCatching { out.add(FoodProduct.fromJson(arr.getJSONObject(i))) }
+    }
+
+    return out
+}
+
+fun parseFoodTypes(arr: JSONArray?): List<FoodType> {
+    if (arr == null) return emptyList()
+    return (0 until arr.length()).mapNotNull { i ->
+        runCatching { FoodType.fromJson(arr.getJSONObject(i)) }.getOrNull()
+    }
+}
+
+fun parseFoodPatterns(arr: JSONArray?): List<FoodPattern> {
+    if (arr == null) return emptyList()
+    return (0 until arr.length()).mapNotNull { i ->
+        runCatching { FoodPattern.fromJson(arr.getJSONObject(i)) }.getOrNull()
+    }
 }

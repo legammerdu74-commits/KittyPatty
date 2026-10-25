@@ -26,7 +26,7 @@ TOKEN = os.environ.get("PATE_TOKEN", "")
 PORT = int(os.environ.get("PATE_PORT", "8765"))
 HOST = os.environ.get("PATE_HOST", "0.0.0.0")
 INDEX = HERE / "static" / "index.html"
-MAX_BODY = 5_000_000
+MAX_BODY = 20_000_000
 
 LOCK = threading.Lock()
 
@@ -39,9 +39,12 @@ def load_state():
             "plans": list(s.get("plans", [])),
             "entries": list(s.get("entries", [])),
             "cats": list(s.get("cats", [])),
+            "products": list(s.get("products", [])),
+            "foodTypes": list(s.get("foodTypes", [])),
+            "foodPatterns": list(s.get("foodPatterns", [])),
         }
     except (FileNotFoundError, ValueError):
-        return {"plans": [], "entries": [], "cats": []}
+        return {"plans": [], "entries": [], "cats": [], "products": [], "foodTypes": [], "foodPatterns": []}
 
 
 def save_state(state):
@@ -141,8 +144,13 @@ class Handler(BaseHTTPRequestHandler):
             plans_in = incoming.get("plans", [])
             entries_in = incoming.get("entries", [])
             cats_in = incoming.get("cats", [])
-            if not (isinstance(plans_in, list) and isinstance(entries_in, list) and isinstance(cats_in, list)):
-                raise ValueError("plans/entries/cats must be lists")
+            products_in = incoming.get("products", [])
+            food_types_in = incoming.get("foodTypes", [])
+            food_patterns_in = incoming.get("foodPatterns", [])
+            if not all(isinstance(items, list) for items in (
+                plans_in, entries_in, cats_in, products_in, food_types_in, food_patterns_in
+            )):
+                raise ValueError("sync data fields must be lists")
         except (ValueError, AttributeError):
             return self._send(400, {"error": "bad json"})
 
@@ -151,6 +159,9 @@ class Handler(BaseHTTPRequestHandler):
             state["plans"] = merge_lists(state["plans"], plans_in)
             state["entries"] = merge_lists(state["entries"], entries_in)
             state["cats"] = merge_lists(state["cats"], cats_in)
+            state["products"] = merge_lists(state["products"], products_in)
+            state["foodTypes"] = merge_lists(state.get("foodTypes", []), food_types_in)
+            state["foodPatterns"] = merge_lists(state.get("foodPatterns", []), food_patterns_in)
             save_state(state)
             self._send(200, state)
 

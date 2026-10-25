@@ -4,13 +4,17 @@
 
 Une appli pour suivre la pâtée de ton chat :
 
-- **Programmes** : « tous les jours / tous les 2 jours / tous les 3 jours… à telle heure, pâtée poulet ou bœuf, telle quantité ».
+- **Programmes** : « tous les jours / tous les 2 jours / tous les 3 jours… à telle heure, nourriture seule ou combinaison, telle quantité ».
 - **Notification** à l'heure du repas, avec le type de pâtée et la quantité, et un bouton **Donné ✓**.
 - **Encodage** : une fois l'heure passée, le repas apparaît dans « À encoder » ; tu indiques ce que tu as réellement donné (type, quantité, remarque, heure).
-- **Accueil** : un calendrier du mois (pastilles : donné / à venir / à encoder), les totaux du mois (prévus, donnés, à venir), le détail d'un jour en touchant une case, puis les prochains repas.
+- **Accueil** : un calendrier du mois (pastilles : donné / à venir / à encoder), les totaux du mois (prévus, donnés, à venir), le détail d'un jour en touchant une case, puis les prochains repas. Les repas d'un même jour sont regroupés dans une seule case ; le menu du calendrier permet de filtrer par chat.
 - **Plusieurs chats** : onglet « Chats » pour les ajouter ; un repas ou un programme peut concerner un ou plusieurs chats (le choix n'apparaît que s'il y a plus d'un chat).
+- **Alimentation personnalisée** : l’onglet « Alimentation » regroupe « Nourriture » et « Combinaisons ». Poulet et Bœuf ainsi que leurs deux combinaisons sont préremplis. Ajoute ensuite les nourritures (nom, marque, prix et poids) ; les combinaisons réutilisent directement les aliments du catalogue et leur ordre peut être modifié. Chaque programme peut choisir une nourriture seule ou une combinaison.
 - **Historique** de tous les repas.
+- **Photos facultatives** : photo de profil pour chaque chat et photo pour chaque repas (prise de vue ou galerie). Elles sont redimensionnées et compressées avant sauvegarde et synchronisation ; leur aperçu apparaît dans l'appli et sur la page du serveur.
+- **Catalogue de nourriture** : ajoute des sachets/portions avec nom, marque, prix et poids depuis l’onglet « Alimentation » → « Nourriture » ; sélectionne-les seuls, dans une combinaison, dans un programme ou lors de l’encodage du repas réellement servi.
 - **Serveur (facultatif)** : sur ton Debian, pour consulter et encoder aussi depuis ton PC. Sans serveur, l'appli marche très bien seule.
+- **Page PC** : onglets pour les repas à encoder, les prochains repas, les programmes, l'historique et les chats ; dans le calendrier, les repas d'un même jour sont regroupés et filtrables par chat. Dans « Chats », choisis un profil dans la liste déroulante pour voir ses repas prévus et son historique, avec la couleur du profil comme couleur d'accent de l'interface.
 
 ```
 chat-pate/
@@ -39,7 +43,7 @@ L'appli s'installe et s'ouvre. (Tu peux aussi générer un fichier `.apk` : menu
 - Dans l'appli, ⚙️ **Réglages → Envoyer une notification de test** pour vérifier.
 
 ### Utilisation
-1. Onglet **Programmes** → **+ Programme** : heure, fréquence (− / +), premier repas, type de pâtée, quantité.
+1. Onglet **Alimentation** : les nourritures Poulet et Bœuf et leurs combinaisons sont déjà prêtes. Ajoute tes autres nourritures dans « Nourriture », puis crée des séquences dans « Combinaisons » avec les aliments du catalogue. Dans **Programmes** → **+ Programme**, sélectionne une nourriture seule ou une combinaison.
 2. Onglet **Repas** : les repas à venir. À l'heure, tu reçois la notification. Appuie dessus (ou sur « Encoder ») pour dire ce que tu as donné, ou sur **Donné ✓** directement dans la notification si tout s'est passé comme prévu.
 3. « Passer » = rien n'a été donné à ce repas.
 4. Onglet **Historique** : tout ce qui a été encodé ; appuie sur un repas pour le corriger.

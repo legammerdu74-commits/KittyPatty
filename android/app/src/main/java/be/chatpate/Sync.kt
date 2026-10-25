@@ -37,7 +37,14 @@ object Sync {
             snap.entries.forEach { entries.put(it.toJson()) }
             val cats = JSONArray()
             snap.cats.forEach { cats.put(it.toJson()) }
-            val body = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats).toString()
+            val products = JSONArray()
+            snap.products.forEach { products.put(it.toJson()) }
+            val foodTypes = JSONArray()
+            snap.foodTypes.forEach { foodTypes.put(it.toJson()) }
+            val foodPatterns = JSONArray()
+            snap.foodPatterns.forEach { foodPatterns.put(it.toJson()) }
+            val body = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats)
+                .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns).toString()
 
             val url = if (base.startsWith("http://") || base.startsWith("https://")) base else "http://$base"
             conn = URL("$url/api/sync").openConnection() as HttpURLConnection
@@ -65,6 +72,9 @@ object Sync {
                 parsePlans(o.optJSONArray("plans")),
                 parseEntries(o.optJSONArray("entries")),
                 parseCats(o.optJSONArray("cats")),
+                parseProducts(o.optJSONArray("products")),
+                parseFoodTypes(o.optJSONArray("foodTypes")),
+                parseFoodPatterns(o.optJSONArray("foodPatterns")),
             )
             if (changed) {
                 Planner.reconcile()

@@ -39,6 +39,8 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
 import androidx.compose.material3.Icon
@@ -46,6 +48,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -158,6 +161,11 @@ fun App(openEntry: MutableState<String?>) {
                     icon = { Icon(Icons.Default.Favorite, contentDescription = null) },
                     label = { Text("Chats") },
                 )
+                NavigationBarItem(
+                    selected = tab == 4, onClick = { tab = 4 },
+                    icon = { Text("🥫") },
+                    label = { Text("Alimentation") },
+                )
             }
         },
         floatingActionButton = {
@@ -183,6 +191,7 @@ fun App(openEntry: MutableState<String?>) {
             0 -> HomeScreen(
                 state = state,
                 cats = cats,
+                products = state.products,
                 exactOk = exactOk,
                 notifOk = notifOk,
                 modifier = mod,
@@ -193,6 +202,8 @@ fun App(openEntry: MutableState<String?>) {
             1 -> PlansScreen(
                 plans = state.plans.filter { !it.deleted }.sortedBy { it.timeMin },
                 cats = cats,
+                products = state.products.filter { !it.deleted },
+                foodPatterns = state.foodPatterns,
                 modifier = mod,
                 onEdit = { editPlanId = it },
                 onToggle = {
@@ -207,15 +218,38 @@ fun App(openEntry: MutableState<String?>) {
                     .sortedByDescending { it.at }
                     .take(200),
                 cats = cats,
+                products = state.products,
                 modifier = mod,
                 onOpen = { encodeId = it },
             )
 
-            else -> CatsScreen(
+            3 -> CatsScreen(
                 cats = cats,
                 plans = state.plans.filter { !it.deleted },
                 modifier = mod,
                 onEdit = { editCatId = it },
+            )
+
+            else -> FoodManagementScreen(
+                products = state.products.filter { !it.deleted },
+                foodPatterns = state.foodPatterns.filter { !it.deleted },
+                modifier = mod,
+                onSaveProduct = {
+                    Store.upsertProduct(it)
+                    Planner.afterChange(ctx)
+                },
+                onDeleteProduct = {
+                    Store.deleteProduct(it)
+                    Planner.afterChange(ctx)
+                },
+                onSavePattern = {
+                    Store.upsertFoodPattern(it)
+                    Planner.afterChange(ctx)
+                },
+                onDeletePattern = {
+                    Store.deleteFoodPattern(it)
+                    Planner.afterChange(ctx)
+                },
             )
         }
     }
@@ -225,6 +259,8 @@ fun App(openEntry: MutableState<String?>) {
     if (showNewPlan) {
         PlanDialog(
             cats = cats,
+            products = state.products.filter { !it.deleted },
+            foodPatterns = state.foodPatterns,
             initial = null,
             onSave = {
                 Store.upsertPlan(it)
@@ -240,6 +276,8 @@ fun App(openEntry: MutableState<String?>) {
     if (planToEdit != null) {
         PlanDialog(
             cats = cats,
+            products = state.products.filter { !it.deleted },
+            foodPatterns = state.foodPatterns,
             initial = planToEdit,
             onSave = {
                 Store.upsertPlan(it)
@@ -260,8 +298,10 @@ fun App(openEntry: MutableState<String?>) {
         EncodeDialog(
             entry = entryToEncode,
             cats = cats,
-            onSave = { pate, qty, note, doneAt, catIds ->
-                Store.markDone(entryToEncode.id, pate, qty, note, doneAt, catIds)
+            products = state.products,
+            foodTypes = state.foodTypes,
+            onSave = { pate, qty, note, doneAt, catIds, photo, productId, foodTypeId ->
+                Store.markDone(entryToEncode.id, pate, qty, note, doneAt, catIds, photo, productId, foodTypeId)
                 Notifier.cancel(ctx, entryToEncode.id)
                 Planner.afterChange(ctx)
                 encodeId = null
@@ -423,18 +463,24 @@ fun WarningCard(text: String, button: String, onClick: () -> Unit) {
 
 @Composable
 fun CatAvatar(cat: Cat, size: Dp) {
+    val bitmap = remember(cat.photo) { cat.photo.takeIf { it.isNotEmpty() }?.let(::decodePhoto) }
     Box(
         Modifier
             .size(size)
+            .clip(CircleShape)
             .background(catColor(cat.color), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(
-            cat.name.trim().take(1).uppercase().ifEmpty { "?" },
-            color = Color.White,
-            fontWeight = FontWeight.Bold,
-            fontSize = (size.value * 0.45f).sp,
-        )
+        if (bitmap == null) {
+            Text(
+                cat.name.trim().take(1).uppercase().ifEmpty { "?" },
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                fontSize = (size.value * 0.45f).sp,
+            )
+        } else {
+            PhotoImage(cat.photo, Modifier.fillMaxSize())
+        }
     }
 }
 
@@ -455,14 +501,14 @@ fun CatsLine(cats: List<Cat>) {
 }
 
 @Composable
-fun PateAvatar(key: String) {
+fun PateAvatar(key: String, emoji: String? = null) {
     Box(
         Modifier
             .size(46.dp)
             .background(pateColor(key).copy(alpha = 0.25f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(Pate.from(key).emoji, fontSize = 22.sp)
+        Text(emoji ?: pateEmoji(key), fontSize = 22.sp)
     }
 }
 
@@ -471,6 +517,7 @@ fun PateAvatar(key: String) {
 fun MealCard(
     occ: Occ,
     cats: List<Cat>,
+    products: List<FoodProduct>,
     now: Long,
     onOpen: ((String) -> Unit)?,
     onSkip: ((String) -> Unit)?,
@@ -482,6 +529,11 @@ fun MealCard(
     val skipped = e?.status == Status.SKIPPED
     val shownPate = if (done && e != null) e.givenPate.ifEmpty { occ.pate } else occ.pate
     val shownQty = if (done && e != null) e.givenQty else occ.qty
+    val product = products.firstOrNull { it.id == occ.productId }
+    val shownFoodName = if (done && e != null) e.givenFoodTypeName.ifEmpty { occ.foodTypeName }
+        else e?.foodTypeName?.ifEmpty { occ.foodTypeName } ?: occ.foodTypeName
+    val shownFoodEmoji = if (done && e != null) e.givenFoodTypeEmoji.ifEmpty { occ.foodTypeEmoji }
+        else e?.foodTypeEmoji?.ifEmpty { occ.foodTypeEmoji } ?: occ.foodTypeEmoji
     val who = cats.filter { it.id in occ.catIds }
 
     val clickable = onOpen != null && e != null && !pending
@@ -497,7 +549,7 @@ fun MealCard(
             .then(if (clickable) Modifier.clickable { onOpen?.invoke(occ.id) } else Modifier),
     ) {
         Row(Modifier.padding(14.dp)) {
-            PateAvatar(shownPate)
+            PateAvatar(product?.pateKey ?: shownPate, shownFoodEmoji.ifEmpty { null })
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
                 Text(
@@ -506,7 +558,14 @@ fun MealCard(
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    Pate.from(shownPate).label + if (shownQty.isNotBlank()) " · $shownQty" else "",
+                    (product?.let {
+                        "${pateEmoji(it.pateKey)} ${it.name} · ${it.brand} · ${it.packPrice} €/sachet" +
+                            it.weight.takeIf { weight -> weight.isNotBlank() }?.let { weight -> " · $weight g" }.orEmpty()
+                    }
+                        ?: shownFoodName.takeIf { it.isNotBlank() }?.let { name ->
+                            "${shownFoodEmoji.ifEmpty { pateEmoji(shownPate) }} $name"
+                        }
+                        ?: pateLabel(shownPate)) + if (shownQty.isNotBlank()) " · $shownQty" else "",
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 if (who.isNotEmpty()) {
@@ -518,7 +577,7 @@ fun MealCard(
                     Text(
                         "✓ Donné à ${Fmt.time(e.doneAt)}" +
                             if (e.givenPate.isNotEmpty() && e.givenPate != e.pate)
-                                " (prévu : ${Pate.from(e.pate).label})" else "",
+                                " (prévu : ${e.foodTypeName.ifEmpty { pateLabel(e.pate) }})" else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = DoneColor,
                         fontWeight = FontWeight.Medium,
@@ -535,6 +594,16 @@ fun MealCard(
                 if (e != null && e.note.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(e.note, style = MaterialTheme.typography.bodyMedium)
+                }
+                if (e != null && e.photo.isNotEmpty()) {
+                    Spacer(Modifier.height(8.dp))
+                    PhotoImage(
+                        e.photo,
+                        Modifier
+                            .fillMaxWidth()
+                            .height(180.dp)
+                            .clip(MaterialTheme.shapes.medium),
+                    )
                 }
                 if (pending && e != null && onOpen != null) {
                     Spacer(Modifier.height(8.dp))
@@ -558,6 +627,7 @@ fun MealCard(
 fun HomeScreen(
     state: AppState,
     cats: List<Cat>,
+    products: List<FoodProduct>,
     exactOk: Boolean,
     notifOk: Boolean,
     modifier: Modifier,
@@ -571,13 +641,18 @@ fun HomeScreen(
 
     var month by remember { mutableStateOf(YearMonth.now()) }
     var selected by remember { mutableStateOf<LocalDate?>(null) }
+    var selectedCatId by remember { mutableStateOf<String?>(null) }
+    val activeSelectedCatId = selectedCatId?.takeIf { id -> cats.any { it.id == id } }
 
     val minute = now / 60_000
     val monthOccs = remember(state, month, minute) {
         Planner.occurrences(state, month.atDay(1), month.atEndOfMonth(), now)
     }
-    val byDay = remember(monthOccs) {
-        monthOccs.groupBy { Instant.ofEpochMilli(it.at).atZone(zone).toLocalDate() }
+    val calendarOccs = remember(monthOccs, activeSelectedCatId) {
+        monthOccs.filter { activeSelectedCatId == null || activeSelectedCatId in it.catIds }
+    }
+    val byDay = remember(calendarOccs) {
+        calendarOccs.groupBy { Instant.ofEpochMilli(it.at).atZone(zone).toLocalDate() }
     }
     val overdue = remember(state, minute) {
         state.entries
@@ -587,7 +662,10 @@ fun HomeScreen(
     }
     val upcoming = remember(state, minute) {
         Planner.occurrences(state, today, today.plusDays(30), now)
-            .filter { it.at > now && (it.entry == null || it.entry.status == Status.PENDING) }
+            .filter {
+                it.at > now && (it.entry == null || it.entry.status == Status.PENDING) &&
+                    (activeSelectedCatId == null || activeSelectedCatId in it.catIds)
+            }
             .take(8)
     }
 
@@ -618,7 +696,7 @@ fun HomeScreen(
         if (overdue.isNotEmpty()) {
             item { SectionTitle("À encoder") }
             items(overdue, key = { "o_" + it.id }) { o ->
-                MealCard(o, cats, now, onOpen, onSkip)
+                MealCard(o, cats, products, now, onOpen, onSkip)
             }
         }
 
@@ -628,6 +706,9 @@ fun HomeScreen(
                 today = today,
                 byDay = byDay,
                 selected = selected,
+                cats = cats,
+                selectedCatId = activeSelectedCatId,
+                onCatSelected = { selectedCatId = it },
                 now = now,
                 onPrev = { month = month.minusMonths(1); selected = null },
                 onNext = { month = month.plusMonths(1); selected = null },
@@ -637,9 +718,9 @@ fun HomeScreen(
         }
 
         item {
-            val total = monthOccs.size
-            val passed = monthOccs.count { it.at <= now }
-            val given = monthOccs.count { it.entry?.status == Status.DONE }
+            val total = calendarOccs.size
+            val passed = calendarOccs.count { it.at <= now }
+            val given = calendarOccs.count { it.entry?.status == Status.DONE }
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 StatTile("Prévus", total.toString(), "ce mois-ci", Modifier.weight(1f))
                 StatTile("Passés", passed.toString(), "dont $given donnés", Modifier.weight(1f))
@@ -655,7 +736,7 @@ fun HomeScreen(
                 item { EmptyState("😺", "Aucun repas ce jour-là.") }
             } else {
                 items(list, key = { "d_" + it.id }) { o ->
-                    MealCard(o, cats, now, onOpen, onSkip)
+                    MealCard(o, cats, products, now, onOpen, onSkip)
                 }
             }
         } else {
@@ -669,7 +750,7 @@ fun HomeScreen(
                 }
             } else {
                 items(upcoming, key = { "u_" + it.id }) { o ->
-                    MealCard(o, cats, now, onOpen, onSkip)
+                    MealCard(o, cats, products, now, onOpen, onSkip)
                 }
             }
         }
@@ -718,6 +799,9 @@ fun CalendarCard(
     today: LocalDate,
     byDay: Map<LocalDate, List<Occ>>,
     selected: LocalDate?,
+    cats: List<Cat>,
+    selectedCatId: String?,
+    onCatSelected: (String?) -> Unit,
     now: Long,
     onPrev: () -> Unit,
     onNext: () -> Unit,
@@ -755,6 +839,7 @@ fun CalendarCard(
                     )
                 }
             }
+            ChatFilterDropdown(cats, selectedCatId, onCatSelected)
             Spacer(Modifier.height(4.dp))
 
             val first = month.atDay(1)
@@ -768,7 +853,7 @@ fun CalendarCard(
                         Box(
                             Modifier
                                 .weight(1f)
-                                .height(48.dp),
+                                .height(54.dp),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (n in 1..days) {
@@ -791,6 +876,31 @@ fun CalendarCard(
                 LegendDot(c.error, "à encoder")
                 Spacer(Modifier.width(14.dp))
                 LegendDot(c.primary.copy(alpha = 0.55f), "prévu")
+            }
+        }
+    }
+}
+
+@Composable
+private fun ChatFilterDropdown(
+    cats: List<Cat>,
+    selectedCatId: String?,
+    onSelect: (String?) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    val selectedName = cats.firstOrNull { it.id == selectedCatId }?.name ?: "Tous les chats"
+    Box {
+        TextButton(onClick = { expanded = true }) { Text("Afficher : $selectedName ▾") }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text("Tous les chats") },
+                onClick = { onSelect(null); expanded = false },
+            )
+            cats.forEach { cat ->
+                DropdownMenuItem(
+                    text = { Text(cat.name) },
+                    onClick = { onSelect(cat.id); expanded = false },
+                )
             }
         }
     }
@@ -826,7 +936,7 @@ private fun DayCell(
     val isToday = date == today
     val isSel = date == selected
     var m = Modifier
-        .size(width = 42.dp, height = 46.dp)
+        .size(width = 42.dp, height = 52.dp)
         .clip(RoundedCornerShape(14.dp))
     if (isSel) m = m.background(c.primaryContainer)
     if (isToday) m = m.border(1.5.dp, c.primary, RoundedCornerShape(14.dp))
@@ -844,25 +954,34 @@ private fun DayCell(
             color = if (isSel) c.onPrimaryContainer else c.onSurface,
         )
         Spacer(Modifier.height(3.dp))
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            modifier = Modifier.height(6.dp),
-        ) {
-            occs.take(4).forEach { o ->
-                val st = o.entry?.status
-                val color = when {
-                    st == Status.DONE -> DoneColor
-                    st == Status.SKIPPED -> c.onSurfaceVariant.copy(alpha = 0.35f)
-                    st == Status.PENDING && o.at <= now -> c.error
-                    else -> c.primary.copy(alpha = 0.55f)
-                }
-                Box(
-                    Modifier
-                        .size(6.dp)
-                        .background(color, CircleShape)
+        if (occs.isNotEmpty()) {
+            val color = when {
+                occs.any { it.entry?.status == Status.PENDING && it.at <= now } -> c.error
+                occs.all { it.entry?.status == Status.DONE } -> DoneColor
+                occs.all { it.entry?.status == Status.SKIPPED } -> c.onSurfaceVariant.copy(alpha = 0.35f)
+                else -> c.primary.copy(alpha = 0.65f)
+            }
+            Box(
+                Modifier
+                    .height(16.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(color)
+                    .padding(horizontal = 5.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    if (occs.size == 1) {
+                        val meal = occs.first()
+                        val emoji = meal.entry?.takeIf { it.status == Status.DONE }
+                            ?.givenFoodTypeEmoji?.ifEmpty { meal.foodTypeEmoji } ?: meal.foodTypeEmoji
+                        emoji.ifEmpty { pateEmoji(meal.pate) }
+                    } else occs.size.toString(),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = Color.White,
+                    maxLines = 1,
                 )
             }
-        }
+        } else Spacer(Modifier.height(16.dp))
     }
 }
 
@@ -874,6 +993,8 @@ private fun DayCell(
 fun PlansScreen(
     plans: List<Plan>,
     cats: List<Cat>,
+    products: List<FoodProduct>,
+    foodPatterns: List<FoodPattern>,
     modifier: Modifier,
     onEdit: (String) -> Unit,
     onToggle: (Plan) -> Unit,
@@ -901,7 +1022,15 @@ fun PlansScreen(
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    PateAvatar(p.pate)
+                    val effectivePatternId = p.patternId.ifEmpty {
+                        if (!p.alternatePate) "" else if (p.pate == Pate.BOEUF.key) "boeuf-poulet" else "poulet-boeuf"
+                    }
+                    val pattern = foodPatterns.firstOrNull { it.id == effectivePatternId && !it.deleted }
+                    val firstFood = pattern?.foodIds?.firstNotNullOfOrNull { id ->
+                        products.firstOrNull { it.id == id && !it.deleted }
+                    }
+                    val firstTypeId = firstFood?.pateKey ?: p.pate
+                    PateAvatar(firstTypeId)
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
@@ -910,7 +1039,23 @@ fun PlansScreen(
                             fontWeight = FontWeight.Bold,
                         )
                         Text(
-                            Pate.from(p.pate).label + if (p.qty.isNotBlank()) " · ${p.qty}" else "",
+                            (products.firstOrNull { it.id == p.productId }?.let { product ->
+                                listOfNotNull(
+                                    product.name,
+                                    product.brand.takeIf { it.isNotBlank() },
+                                    product.packPrice.takeIf { it.isNotBlank() }?.let { "$it €/sachet" },
+                                    product.weight.takeIf { it.isNotBlank() }?.let { "$it g" },
+                                ).joinToString(" · ")
+                            } ?: pattern?.let { foodPattern ->
+                                foodPattern.foodIds.mapNotNull { id ->
+                                    products.firstOrNull { it.id == id && !it.deleted }?.name
+                                }.joinToString(" → ").ifEmpty { foodPattern.name }
+                            }
+                                ?: if (p.alternatePate) {
+                                val nextPate = if (p.pate == Pate.BOEUF.key) Pate.POULET.key else Pate.BOEUF.key
+                                "${pateLabel(p.pate)} → ${pateLabel(nextPate)}"
+                            } else pateLabel(p.pate)) +
+                                if (p.qty.isNotBlank()) " · ${p.qty}" else "",
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         val who = cats.filter { it.id in p.catIds }
@@ -935,12 +1080,132 @@ fun PlansScreen(
     }
 }
 
+@Composable
+private fun FoodManagementScreen(
+    products: List<FoodProduct>,
+    foodPatterns: List<FoodPattern>,
+    modifier: Modifier,
+    onSaveProduct: (FoodProduct) -> Unit,
+    onDeleteProduct: (String) -> Unit,
+    onSavePattern: (FoodPattern) -> Unit,
+    onDeletePattern: (String) -> Unit,
+) {
+    var category by remember { mutableIntStateOf(0) }
+    var showProductEditor by remember { mutableStateOf(false) }
+    var editingProductId by remember { mutableStateOf<String?>(null) }
+
+    Column(modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Text("Alimentation", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (category == 0) {
+                Button(onClick = { category = 0 }, modifier = Modifier.weight(1f).height(56.dp)) {
+                    Text("🥫  Nourriture", style = MaterialTheme.typography.titleMedium)
+                }
+            } else {
+                OutlinedButton(onClick = { category = 0 }, modifier = Modifier.weight(1f).height(56.dp)) {
+                    Text("🥫  Nourriture", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+            if (category == 1) {
+                Button(onClick = { category = 1 }, modifier = Modifier.weight(1f).height(56.dp)) {
+                    Text("🔁  Combinaisons", style = MaterialTheme.typography.titleMedium)
+                }
+            } else {
+                OutlinedButton(onClick = { category = 1 }, modifier = Modifier.weight(1f).height(56.dp)) {
+                    Text("🔁  Combinaisons", style = MaterialTheme.typography.titleMedium)
+                }
+            }
+        }
+
+        if (category == 0) {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Button(onClick = {
+                        editingProductId = null
+                        showProductEditor = true
+                    }) {
+                        Text("Ajouter une nourriture")
+                    }
+                }
+                if (products.isEmpty()) {
+                    item { EmptyState("🥫", "Ajoute une nourriture pour la retrouver dans tes programmes.") }
+                }
+                items(products, key = { it.id }) { product ->
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            Modifier.padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text("${pateEmoji(product.pateKey)} ${product.name}", fontWeight = FontWeight.Bold)
+                                Text(
+                                    listOfNotNull(
+                                        product.brand.takeIf { it.isNotBlank() },
+                                        product.packPrice.takeIf { it.isNotBlank() }?.let { "$it €/sachet" },
+                                        product.weight.takeIf { it.isNotBlank() }?.let { "$it g" },
+                                    ).joinToString(" · ").ifEmpty { "Nourriture de base" },
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            TextButton(onClick = {
+                                editingProductId = product.id
+                                showProductEditor = true
+                            }) { Text("Modifier") }
+                        }
+                    }
+                }
+            }
+        } else {
+            FoodSettingsScreen(
+                patterns = foodPatterns,
+                modifier = Modifier.weight(1f),
+                products = products,
+                onSavePattern = onSavePattern,
+                onDeletePattern = onDeletePattern,
+            )
+        }
+    }
+
+    if (showProductEditor) {
+        ProductCatalogDialog(
+            products = products,
+            initialProductId = editingProductId,
+            onSave = onSaveProduct,
+            onDelete = onDeleteProduct,
+            onDismiss = {
+                showProductEditor = false
+                editingProductId = null
+            },
+        )
+    }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Onglet "Historique"
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-fun HistoryScreen(entries: List<Entry>, cats: List<Cat>, modifier: Modifier, onOpen: (String) -> Unit) {
+fun HistoryScreen(
+    entries: List<Entry>,
+    cats: List<Cat>,
+    products: List<FoodProduct>,
+    modifier: Modifier,
+    onOpen: (String) -> Unit,
+) {
     val now by rememberNow()
     LazyColumn(
         modifier = modifier,
@@ -956,7 +1221,7 @@ fun HistoryScreen(entries: List<Entry>, cats: List<Cat>, modifier: Modifier, onO
             }
         }
         items(entries, key = { it.id }) { e ->
-            MealCard(e.toOcc(), cats, now, onOpen, null)
+            MealCard(e.toOcc(), cats, products, now, onOpen, null)
         }
     }
 }
@@ -966,7 +1231,12 @@ fun HistoryScreen(entries: List<Entry>, cats: List<Cat>, modifier: Modifier, onO
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-fun CatsScreen(cats: List<Cat>, plans: List<Plan>, modifier: Modifier, onEdit: (String) -> Unit) {
+fun CatsScreen(
+    cats: List<Cat>,
+    plans: List<Plan>,
+    modifier: Modifier,
+    onEdit: (String) -> Unit,
+) {
     LazyColumn(
         modifier = modifier,
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),

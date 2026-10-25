@@ -8,31 +8,59 @@
   :root {
     --bg: #fff8f4; --card: #f1e0d5; --over: #ffdcc4; --text: #211a15; --muted: #6b5a50;
     --primary: #9a4e12; --onprimary: #fff; --line: #dcc6b8; --poulet: #e0a030; --boeuf: #b4523a;
-    --err: #ffdad4;
+    --err: #ffdad4; --surface: #fffdfb; --shadow: 0 12px 32px rgba(67, 42, 25, .08);
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1a120c; --card: #3d2f26; --over: #743809; --text: #efe0d7; --muted: #c9b5aa;
       --primary: #ffb787; --onprimary: #512400; --line: #52443c; --err: #93000a;
+      --surface: #261a13; --shadow: 0 12px 32px rgba(0, 0, 0, .18);
     }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
+  body { margin: 0; background: radial-gradient(ellipse at top left, color-mix(in srgb, var(--primary) 7%, var(--bg)), var(--bg) 48rem); color: var(--text);
          font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-  header { padding: 16px 20px; display: flex; align-items: center; gap: 12px;
-           border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
-  header h1 { margin: 0; font-size: 1.25rem; flex: 1; }
+  header { padding: 18px clamp(20px, 4vw, 64px); display: flex; align-items: center; gap: 14px;
+           border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2;
+           background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(16px); }
+  header h1 { margin: 0; font-size: 1.35rem; flex: 1; letter-spacing: -.03em; }
   header small { color: var(--muted); }
-  main { max-width: 760px; margin: 0 auto; padding: 16px 20px 64px; }
-  h2 { font-size: .9rem; text-transform: uppercase; letter-spacing: .05em; color: var(--primary); margin: 28px 0 10px; }
-  .card { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand-mark { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 15px;
+                background: var(--primary); color: var(--onprimary); font-size: 22px; }
+  main { width: min(100%, 1680px); margin: 0 auto; padding: 28px clamp(20px, 4vw, 64px) 64px; }
+  .welcome { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin: 4px 0 24px; }
+  .welcome h2 { margin: 0 0 4px; font-size: clamp(1.6rem, 2.4vw, 2.25rem); letter-spacing: -.04em; color: var(--text); text-transform: none; }
+  .welcome p { margin: 0; color: var(--muted); }
+  .cat-strip { display: flex; align-items: center; justify-content: end; gap: 8px; flex-wrap: wrap; }
+  .cat-pill { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border: 1px solid var(--line);
+              border-radius: 999px; background: var(--surface); font-size: .9rem; font-weight: 600; }
+  .tabs { display: flex; gap: 8px; padding: 7px; margin-bottom: 22px; border: 1px solid var(--line);
+          border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); overflow-x: auto; }
+  .tab { display: inline-flex; justify-content: center; align-items: center; gap: 9px; min-height: 44px;
+         padding: 8px 17px; white-space: nowrap; background: transparent; color: var(--muted); }
+  .tab[aria-selected="true"] { background: var(--primary); color: var(--onprimary); }
+  .tab-count { min-width: 22px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, transparent); font-size: .78rem; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .panel-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 0 0 16px; }
+  .panel-heading h2 { margin: 0; font-size: 1.15rem; color: var(--text); text-transform: none; letter-spacing: -.02em; }
+  .panel-heading p { margin: 3px 0 0; color: var(--muted); font-size: .9rem; }
+  .card-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 10px; align-items: start; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 15px; padding: 12px 14px; margin: 0;
+          box-shadow: var(--shadow); }
   .card.over { background: var(--over); }
   .title { font-weight: 700; }
+  .card > .title { margin-bottom: 5px; }
+  .card > .row { margin-top: 4px; }
+  .card .actions { margin-top: 8px; }
   .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
   .muted { color: var(--muted); font-size: .9rem; }
-  button { font: inherit; border: 0; border-radius: 999px; padding: 8px 18px; cursor: pointer;
-           background: var(--primary); color: var(--onprimary); }
+  button { font: inherit; border: 0; border-radius: 999px; padding: 9px 18px; cursor: pointer;
+           background: var(--primary); color: var(--onprimary); transition: transform .16s ease, filter .16s ease; }
+  button:hover { filter: brightness(1.05); transform: translateY(-1px); }
+  button:focus-visible { outline: 3px solid color-mix(in srgb, var(--primary) 48%, transparent); outline-offset: 2px; }
   button.ghost { background: transparent; color: var(--primary); padding: 8px 12px; }
   label { display: block; margin: 10px 0 4px; font-weight: 600; font-size: .9rem; }
   input, select, textarea { font: inherit; width: 100%; padding: 8px 10px; border-radius: 10px;
@@ -40,38 +68,273 @@
   .form { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 8px; }
   .form .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .actions { margin-top: 12px; display: flex; gap: 8px; }
-  #banner { background: var(--err); padding: 10px 16px; border-radius: 12px; margin-bottom: 12px; display: none; }
-  .empty { color: var(--muted); }
+  dialog { width: min(480px, calc(100% - 32px)); padding: 22px; border: 1px solid var(--line);
+           border-radius: 20px; background: var(--surface); color: var(--text); box-shadow: var(--shadow); }
+  dialog::backdrop { background: rgba(30, 20, 14, .42); backdrop-filter: blur(3px); }
+  dialog h2 { margin: 0 0 14px; color: var(--text); text-transform: none; letter-spacing: -.02em; }
+  #banner { background: var(--err); padding: 12px 16px; border-radius: 12px; margin-bottom: 18px; display: none; }
+  .empty { color: var(--muted); padding: 36px 20px; border: 1px dashed var(--line); border-radius: 18px; text-align: center; background: var(--surface); }
   .av { width: 22px; height: 22px; border-radius: 50%; color: #fff; font-size: 12px; font-weight: 700;
         display: inline-flex; align-items: center; justify-content: center; }
+  .cat-photo { object-fit: cover; }
+  .meal-photo { display: block; max-width: 100%; max-height: 280px; object-fit: cover; border-radius: 12px; margin-top: 8px; }
+  .calendar-layout { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(260px, .7fr); gap: 16px; align-items: start; }
+  .calendar-card, .day-card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; box-shadow: var(--shadow); }
+  .calendar-top { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .calendar-top strong { flex: 1; text-align: center; text-transform: capitalize; }
+  .calendar-top button { padding: 6px 13px; }
+  .calendar-filter { width: auto; max-width: 190px; padding: 6px 10px; font-size: .9rem; }
+  .calendar-week, .calendar-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+  .calendar-week { margin-bottom: 4px; color: var(--muted); text-align: center; font-size: .78rem; font-weight: 700; }
+  .calendar-day { min-width: 0; min-height: 58px; padding: 6px; display: flex; flex-direction: column; align-items: flex-start;
+                  justify-content: space-between; border: 1px solid transparent; border-radius: 11px;
+                  background: transparent; color: var(--text); }
+  .calendar-day:hover { background: var(--bg); }
+  .calendar-day.outside { visibility: hidden; }
+  .calendar-day.today { border-color: var(--primary); }
+  .calendar-day.selected { background: var(--over); border-color: var(--primary); }
+  .calendar-day-number { font-size: .85rem; font-weight: 600; }
+  .calendar-dots { display: flex; gap: 3px; min-height: 16px; flex-wrap: wrap; }
+  .calendar-food { min-width: 17px; height: 17px; padding: 0 2px; display: grid; place-items: center;
+                   border-radius: 6px; background: var(--bg); font-size: 11px; line-height: 1; }
+  .calendar-food.done { box-shadow: inset 0 -2px #5e8b5a; }
+  .calendar-food.pending { box-shadow: inset 0 -2px var(--primary); }
+  .calendar-food.overdue { box-shadow: inset 0 -2px var(--err); }
+  .calendar-food.skipped { opacity: .45; }
+  .calendar-legend { display: flex; justify-content: center; gap: 16px; flex-wrap: wrap; margin-top: 12px; color: var(--muted); font-size: .8rem; }
+  .calendar-legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .calendar-legend .calendar-dot { width: 8px; height: 8px; border-radius: 50%; }
+  .day-card h3 { margin: 0 0 10px; text-transform: capitalize; font-size: 1rem; }
+  .day-meals { display: grid; gap: 8px; max-height: 440px; overflow: auto; }
+  .calendar-stats { display: flex; gap: 8px; margin-top: 12px; }
+  .calendar-stat { flex: 1; text-align: center; background: var(--bg); border-radius: 12px; padding: 8px 5px; }
+  .calendar-stat strong { display: block; font-size: 1.15rem; }
+  .calendar-stat small { color: var(--muted); }
+  .food-categories { display: flex; gap: 12px; margin: 16px 0; }
+  .food-category { min-width: 190px; min-height: 54px; border: 1px solid var(--line); background: var(--surface);
+                   color: var(--text); font-size: 1rem; font-weight: 700; }
+  .food-category.active { background: var(--primary); color: var(--onprimary); border-color: var(--primary); }
+  .chat-browser { display: grid; grid-template-columns: minmax(220px, .35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .chat-list, .chat-detail { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); }
+  .chat-list { display: grid; gap: 8px; }
+  .chat-avatar { width: 36px; height: 36px; font-size: 15px; flex: 0 0 auto; }
+  .chat-detail h3 { margin: 0; }
+  .chat-detail .chat-color-bar { height: 6px; border-radius: 99px; background: var(--chat-accent, var(--primary)); margin: 10px 0 18px; }
+  @media (max-width: 700px) { .chat-browser { grid-template-columns: 1fr; } }
+  @media (max-width: 900px) {
+    .calendar-layout { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 700px) {
+    header { padding: 12px 16px; }
+    header small { display: none; }
+    main { padding: 22px 16px 48px; }
+    .welcome { align-items: start; flex-direction: column; }
+    .cat-strip { justify-content: start; }
+    .tabs { margin-left: -4px; margin-right: -4px; }
+    .tab { flex: 1; padding: 8px 12px; }
+    .card-grid { grid-template-columns: 1fr; }
+    .calendar-day { min-height: 48px; padding: 4px; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <h1>🐱 Gamelle</h1>
+  <div class="brand"><div class="brand-mark">🐾</div><h1>Gamelle</h1></div>
   <small id="status"></small>
   <button class="ghost" id="refresh" title="Actualiser">↻</button>
 </header>
 <main>
   <div id="banner"></div>
-  <section><h2>À encoder</h2><div id="overdue"></div></section>
-  <section><h2>Prochains repas</h2><div id="upcoming"></div></section>
-  <section><h2>Programmes</h2><div id="plans"></div></section>
-  <section><h2>Historique</h2><div id="history"></div></section>
+  <div class="welcome">
+    <div><h2>Le petit coin des chats</h2><p>Les repas, les habitudes et les moments à garder en mémoire.</p></div>
+    <div class="cat-strip" id="catStrip"></div>
+  </div>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button class="tab" id="tab-overdue" role="tab" aria-selected="true" aria-controls="panel-overdue">À encoder <span class="tab-count" id="count-overdue">0</span></button>
+    <button class="tab" id="tab-upcoming" role="tab" aria-selected="false" aria-controls="panel-upcoming">Prochains repas</button>
+    <button class="tab" id="tab-plans" role="tab" aria-selected="false" aria-controls="panel-plans">Programmes</button>
+    <button class="tab" id="tab-food" role="tab" aria-selected="false" aria-controls="panel-food">Alimentation</button>
+    <button class="tab" id="tab-history" role="tab" aria-selected="false" aria-controls="panel-history">Historique</button>
+    <button class="tab" id="tab-cats" role="tab" aria-selected="false" aria-controls="panel-cats">Chats</button>
+  </nav>
+  <section class="panel active" id="panel-overdue" role="tabpanel" aria-labelledby="tab-overdue">
+    <div class="panel-heading"><div><h2>À encoder</h2><p>Les repas passés qui attendent encore une mise à jour.</p></div></div>
+    <div class="card-grid" id="overdue"></div>
+  </section>
+  <section class="panel" id="panel-upcoming" role="tabpanel" aria-labelledby="tab-upcoming">
+    <div class="panel-heading"><div><h2>Prochains repas</h2><p>Jusqu’aux prochains repas prévus pour tes chats.</p></div></div>
+    <div class="calendar-layout">
+      <div class="calendar-card">
+        <div class="calendar-top">
+          <button class="ghost" id="calendarPrev" aria-label="Mois précédent">‹</button>
+          <strong id="calendarMonth"></strong>
+          <button class="ghost" id="calendarNext" aria-label="Mois suivant">›</button>
+          <button class="ghost" id="calendarToday">Aujourd’hui</button>
+        </div>
+        <label for="calendarCatFilter">Afficher les repas de</label>
+        <select class="calendar-filter" id="calendarCatFilter"><option value="">Tous les chats</option></select>
+        <div class="calendar-week"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+        <div class="calendar-days" id="calendarDays"></div>
+        <div class="calendar-legend">
+          <span><i class="calendar-dot" style="background:#5e8b5a"></i>Donné</span>
+          <span><i class="calendar-dot" style="background:var(--err)"></i>À encoder</span>
+          <span><i class="calendar-dot" style="background:var(--primary)"></i>À prévoir</span>
+        </div>
+        <div class="calendar-stats" id="calendarStats"></div>
+      </div>
+      <aside class="day-card">
+        <h3 id="selectedDate"></h3>
+        <div class="day-meals" id="selectedMeals"></div>
+      </aside>
+    </div>
+    <div class="panel-heading" style="margin-top:24px"><div><h2>À venir</h2><p>Les prochains repas programmés.</p></div></div>
+    <div class="card-grid" id="upcoming"></div>
+  </section>
+  <section class="panel" id="panel-plans" role="tabpanel" aria-labelledby="tab-plans">
+    <div class="panel-heading"><div><h2>Programmes</h2><p>Les habitudes et fréquences enregistrées dans l’application.</p></div></div>
+    <div class="card-grid" id="plans"></div>
+  </section>
+  <section class="panel" id="panel-food" role="tabpanel" aria-labelledby="tab-food">
+    <div class="panel-heading"><div><h2>Alimentation</h2><p>Gère tes nourritures et les séquences de repas.</p></div></div>
+    <div class="food-categories" role="tablist" aria-label="Catégories d’alimentation">
+      <button class="food-category active" id="foodCategoryButton" aria-selected="true">🥫 Nourriture</button>
+      <button class="food-category" id="patternCategoryButton" aria-selected="false">🔁 Combinaisons</button>
+    </div>
+    <section id="foodCategoryFoods">
+      <div class="panel-heading"><div><h3>Nourriture</h3><p>Nom, marque, prix et poids d’un sachet ou d’une portion.</p></div>
+        <button id="addProduct">+ Ajouter une nourriture</button></div>
+      <div class="card-grid" id="products"></div>
+    </section>
+    <section id="foodCategoryPatterns" hidden>
+      <div class="panel-heading"><div><h3>Combinaisons</h3><p>Chaque repas utilise la prochaine nourriture de la séquence.</p></div>
+        <button id="addPattern">+ Ajouter une combinaison</button></div>
+      <div class="card-grid" id="patterns"></div>
+    </section>
+  </section>
+  <section class="panel" id="panel-history" role="tabpanel" aria-labelledby="tab-history">
+    <div class="panel-heading"><div><h2>Historique</h2><p>Les repas déjà encodés, avec leurs notes et photos.</p></div></div>
+    <div class="card-grid" id="history"></div>
+  </section>
+  <section class="panel" id="panel-cats" role="tabpanel" aria-labelledby="tab-cats">
+    <div class="panel-heading"><div><h2>Chats</h2><p>Choisis un profil pour consulter ses repas et adapter la couleur d’accent de cette vue.</p></div></div>
+    <div class="chat-browser">
+      <div class="chat-list"><label for="chatList">Profil du chat</label><select id="chatList"></select></div>
+      <div class="chat-detail" id="chatDetail"></div>
+    </div>
+  </section>
 </main>
+<dialog id="productDialog">
+  <form id="productForm">
+    <h2 id="productDialogTitle">Ajouter une nourriture</h2>
+    <label for="productName">Nom</label><input id="productName" required maxlength="80" placeholder="ex. Terrine au saumon">
+    <label for="productBrand">Marque</label><input id="productBrand" required maxlength="80" placeholder="ex. Marque">
+    <label for="productPrice">Prix du sachet / portion (€)</label><input id="productPrice" required inputmode="decimal" placeholder="ex. 1,49">
+    <label for="productWeight">Poids du sachet / portion (g)</label><input id="productWeight" inputmode="decimal" placeholder="ex. 85">
+    <div class="actions">
+      <button type="submit">Enregistrer</button>
+      <button type="button" class="ghost" id="cancelProduct">Annuler</button>
+    </div>
+    <p class="muted" id="productError"></p>
+  </form>
+</dialog>
+<dialog id="patternDialog">
+  <form id="patternForm">
+    <h2 id="patternDialogTitle">Ajouter une combinaison</h2>
+    <label for="patternName">Nom</label><input id="patternName" required maxlength="80" placeholder="ex. Poulet → Poisson → Bœuf">
+    <label for="patternFoodSelect">Ajouter une nourriture à la séquence</label>
+    <div class="actions">
+      <select id="patternFoodSelect"></select>
+      <button type="button" id="appendPatternFood">Ajouter à l’ordre</button>
+    </div>
+    <ol id="patternSequence"></ol>
+    <div class="actions">
+      <button type="submit">Enregistrer</button>
+      <button type="button" class="ghost" id="cancelPattern">Annuler</button>
+    </div>
+    <p class="muted" id="patternError"></p>
+  </form>
+</dialog>
 
 <script>
 "use strict";
 const PATES = { poulet: "Poulet", boeuf: "Bœuf" };
 const COLORS = { poulet: "var(--poulet)", boeuf: "var(--boeuf)" };
-let state = { plans: [], entries: [], cats: [] };
+const FOOD_ICONS = { poulet: "🍗", boeuf: "🥩", sachet: "🥫" };
+let state = { plans: [], entries: [], cats: [], products: [], foodTypes: [], foodPatterns: [] };
 let openForm = null;      // id du repas dont le formulaire est ouvert
 let formDraft = null;     // valeurs saisies, conservées pendant les rafraîchissements
+let activeTab = "overdue";
+let selectedChatId = "";
+let editingProductId = null;
+let editingPatternId = null;
+let patternDraftFoodIds = [];
+let calendarCatId = "";
+let calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+let selectedDate = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
 
 const $ = (id) => document.getElementById(id);
-const CAT_COLORS = ["#d9803f", "#6c8ead", "#8e6baa", "#5e9c76", "#c95c7a", "#8a7b6a"];
+const CAT_COLORS = ["#d9803f", "#5b83b7", "#6e9e68", "#a871a6", "#c9973a", "#8a7566"];
 const activeCats = () => (state.cats || []).filter((c) => !c.deleted);
-const catColor = (c) => CAT_COLORS[((c.colorIdx || 0) % CAT_COLORS.length + CAT_COLORS.length) % CAT_COLORS.length];
+const baseFoods = [
+  { id: "poulet", name: "Poulet", kind: "poulet", brand: "", packPrice: "", weight: "", updatedAt: 1 },
+  { id: "boeuf", name: "Bœuf", kind: "boeuf", brand: "", packPrice: "", weight: "", updatedAt: 1 },
+];
+const activeProducts = () => {
+  const saved = state.products || [];
+  const missingDefaults = baseFoods.filter((food) => !saved.some((item) => item.id === food.id));
+  const oldTypes = (state.foodTypes || [])
+    .filter((type) => !type.deleted && !saved.some((item) => item.id === type.id))
+    .map((type) => ({ ...type, kind: type.id === "poulet" || type.id === "boeuf" ? type.id : "sachet",
+      brand: "", packPrice: "", weight: "" }));
+  return [...saved, ...missingDefaults, ...oldTypes].filter((product) => !product.deleted);
+};
+const productFor = (item) => activeProducts().find((product) => product.id === item.productId);
+const defaultTypes = [
+  { id: "poulet", name: "Poulet", emoji: "🍗" },
+  { id: "boeuf", name: "Bœuf", emoji: "🥩" },
+];
+const defaultPatterns = [
+  { id: "poulet-boeuf", name: "Poulet → Bœuf", foodIds: ["poulet", "boeuf"] },
+  { id: "boeuf-poulet", name: "Bœuf → Poulet", foodIds: ["boeuf", "poulet"] },
+];
+const activeFoodTypes = () => {
+  const types = (state.foodTypes || []).filter((type) => !type.deleted);
+  return types.length ? types : defaultTypes;
+};
+const activeFoodPatterns = () => {
+  const saved = state.foodPatterns || [];
+  const savedIds = new Set(saved.map((pattern) => pattern.id));
+  const patterns = [
+    ...defaultPatterns.filter((pattern) => !savedIds.has(pattern.id)),
+    ...saved.filter((pattern) => !pattern.deleted),
+  ];
+  return patterns.map((pattern) => ({
+    ...pattern,
+    foodIds: pattern.foodIds || (pattern.typeIds || []).map((id) =>
+      id === "poulet" || id === "boeuf" ? id : id),
+  }));
+};
+const patternForPlan = (plan) => {
+  const legacyPatternId = plan.alternatePate
+    ? (plan.pate === "boeuf" ? "boeuf-poulet" : "poulet-boeuf")
+    : "";
+  return activeFoodPatterns().find((pattern) => pattern.id === (plan.patternId || legacyPatternId));
+};
+const shownFoodTypeId = (item) => item.status === "done"
+  ? (item.givenFoodTypeId || item.foodTypeId || item.givenPate || item.pate)
+  : (item.foodTypeId || item.pate);
+const foodTypeFor = (item) => activeFoodTypes().find((type) => type.id === shownFoodTypeId(item));
+const foodName = (item, typeId = shownFoodTypeId(item)) =>
+  (typeId === shownFoodTypeId(item) ? (item.status === "done" ? item.givenFoodTypeName : item.foodTypeName) : "") ||
+  activeFoodTypes().find((type) => type.id === typeId)?.name || PATES[typeId] || typeId || "Repas";
+const foodIcon = (item) => productFor(item)
+  ? (FOOD_ICONS[productFor(item).kind] || "🥫")
+  : (item.status === "done" ? item.givenFoodTypeEmoji : item.foodTypeEmoji) ||
+    foodTypeFor(item)?.emoji || FOOD_ICONS[shownFoodTypeId(item)] || "🥫";
+const priceLabel = (product) => product.packPrice
+  ? Number(product.packPrice).toLocaleString("fr-BE", { style: "currency", currency: "EUR" }) + " / sachet"
+  : "";
+const catColor = (c) => CAT_COLORS[((c.color || 0) % CAT_COLORS.length + CAT_COLORS.length) % CAT_COLORS.length];
 const el = (tag, props = {}, ...kids) => {
   const n = document.createElement(tag);
   for (const [k, v] of Object.entries(props)) {
@@ -112,22 +375,198 @@ function dayName(ms) {
 }
 const hhmm = (min) => String(Math.floor(min / 60)).padStart(2, "0") + ":" + String(min % 60).padStart(2, "0");
 const every = (n) => (n <= 1 ? "Tous les jours" : "Tous les " + n + " jours");
+const dateKey = (date) => date.getFullYear() + "-" + String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+const localDate = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+  return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
+};
+const dayDiff = (a, b) => Math.round((Date.UTC(b.getFullYear(), b.getMonth(), b.getDate()) - Date.UTC(a.getFullYear(), a.getMonth(), a.getDate())) / 86400000);
+const longDate = (date) => date.toLocaleDateString("fr-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+const monthTitle = (date) => date.toLocaleDateString("fr-BE", { month: "long", year: "numeric" });
 
-function badge(pate, qty) {
-  return el("span", { class: "row" },
-    el("span", { class: "dot", style: "background:" + (COLORS[pate] || COLORS.poulet) }),
-    (PATES[pate] || pate) + (qty ? " · " + qty : ""));
+function planFoodOn(plan, date, start) {
+  const product = activeProducts().find((item) => item.id === plan.productId);
+  if (product) return product;
+  const pattern = patternForPlan(plan);
+  if (pattern && pattern.foodIds.length) {
+    const occurrence = Math.floor(dayDiff(start, date) / Math.max(1, plan.everyDays || 1));
+    const foodId = pattern.foodIds[occurrence % pattern.foodIds.length];
+    return activeProducts().find((item) => item.id === foodId) || null;
+  }
+  return null;
+}
+function planPateOn(plan, date, start) {
+  const food = planFoodOn(plan, date, start);
+  if (food) return food.kind;
+  const pattern = patternForPlan(plan);
+  if (pattern && pattern.foodIds.length) {
+    const occurrence = Math.floor(dayDiff(start, date) / Math.max(1, plan.everyDays || 1));
+    const food = activeProducts().find((item) => item.id === pattern.foodIds[occurrence % pattern.foodIds.length]);
+    if (food) return food.kind;
+  }
+  if (!plan.alternatePate) return plan.pate;
+  const occurrence = Math.floor(dayDiff(start, date) / Math.max(1, plan.everyDays || 1));
+  if (occurrence % 2 === 0) return plan.pate;
+  return plan.pate === "boeuf" ? "poulet" : "boeuf";
+}
+
+function mealsForMonth() {
+  const start = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), 1);
+  const end = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 0);
+  const now = Date.now();
+  const liveEntries = (state.entries || []).filter((entry) => !entry.deleted);
+  const byId = new Map((state.entries || []).map((entry) => [entry.id, entry]));
+  const meals = liveEntries.filter((entry) => {
+    const date = new Date(entry.at);
+    return date.getFullYear() === calendarMonth.getFullYear() && date.getMonth() === calendarMonth.getMonth();
+  });
+
+  for (const plan of state.plans || []) {
+    if (plan.deleted || !plan.active) continue;
+    const planStart = localDate(plan.start);
+    if (!planStart) continue;
+    const first = start > planStart ? start : planStart;
+    for (let date = first; date <= end; date = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)) {
+      const elapsed = dayDiff(planStart, date);
+      const interval = Math.max(1, plan.everyDays || 1);
+      if (elapsed < 0 || elapsed % interval !== 0) continue;
+      const id = plan.id + "_" + dateKey(date).replaceAll("-", "");
+      if (byId.has(id)) continue;
+      const timeMin = Number(plan.timeMin) || 0;
+      const at = new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(timeMin / 60), timeMin % 60).getTime();
+      if (at <= now) continue;
+      const product = planFoodOn(plan, date, planStart);
+      const typeId = product?.kind || planPateOn(plan, date, planStart);
+      const foodType = activeFoodTypes().find((type) => type.id === typeId);
+      meals.push({
+        id, planId: plan.id, at, pate: typeId, qty: plan.qty || "",
+        productId: product?.id || "",
+        foodTypeId: typeId, foodTypeName: foodType?.name || "", foodTypeEmoji: foodType?.emoji || "",
+        status: "pending", givenPate: "", givenQty: "", note: "", doneAt: 0, deleted: false,
+        updatedAt: 0, catIds: plan.catIds || [],
+      });
+    }
+  }
+  return meals.sort((a, b) => a.at - b.at);
+}
+
+function renderCalendar() {
+  const today = new Date();
+  const month = calendarMonth;
+  const cats = activeCats();
+  if (!cats.some((cat) => cat.id === calendarCatId)) calendarCatId = "";
+  const filter = $("calendarCatFilter");
+  filter.replaceChildren(
+    el("option", { value: "" }, "Tous les chats"),
+    ...cats.map((cat) => {
+      const option = el("option", { value: cat.id }, cat.name);
+      option.selected = cat.id === calendarCatId;
+      return option;
+    }),
+  );
+  filter.value = calendarCatId;
+  const meals = mealsForMonth().filter((meal) => !calendarCatId || (meal.catIds || []).includes(calendarCatId));
+  const byDay = new Map();
+  meals.forEach((meal) => {
+    const key = dateKey(new Date(meal.at));
+    if (!byDay.has(key)) byDay.set(key, []);
+    byDay.get(key).push(meal);
+  });
+  $("calendarMonth").textContent = monthTitle(month);
+  const firstOffset = (new Date(month.getFullYear(), month.getMonth(), 1).getDay() + 6) % 7;
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  const totalCells = Math.ceil((firstOffset + daysInMonth) / 7) * 7;
+  const cells = [];
+  for (let cell = 0; cell < totalCells; cell++) {
+    const dayNumber = cell - firstOffset + 1;
+    if (dayNumber < 1 || dayNumber > daysInMonth) {
+      cells.push(el("div", { class: "calendar-day outside", "aria-hidden": "true" }));
+      continue;
+    }
+    const date = new Date(month.getFullYear(), month.getMonth(), dayNumber);
+    const dayMeals = byDay.get(dateKey(date)) || [];
+    const dayClasses = ["calendar-day"];
+    if (dateKey(date) === dateKey(today)) dayClasses.push("today");
+    if (dateKey(date) === dateKey(selectedDate)) dayClasses.push("selected");
+    const dots = dayMeals.length ? (() => {
+      const statusClass = dayMeals.some((meal) => meal.status === "pending" && meal.at <= Date.now()) ? "overdue" :
+        dayMeals.every((meal) => meal.status === "done") ? "done" :
+          dayMeals.every((meal) => meal.status === "skipped") ? "skipped" : "pending";
+      const chatNames = [...new Set(dayMeals.flatMap((meal) =>
+        activeCats().filter((cat) => (meal.catIds || []).includes(cat.id)).map((cat) => cat.name)))];
+      const foods = [...new Set(dayMeals.map((meal) => foodTypeFor(meal)?.name || PATES[meal.pate] || productFor(meal)?.name || "Repas"))];
+      return [el("span", {
+        class: "calendar-food " + statusClass,
+        title: foods.join(", ") + (chatNames.length ? " · " + chatNames.join(", ") : ""),
+      }, dayMeals.length === 1 ? foodIcon(dayMeals[0]) : String(dayMeals.length))];
+    })() : [];
+    const button = el("button", {
+      class: dayClasses.join(" "),
+      "aria-label": longDate(date) + (dayMeals.length ? ", " + dayMeals.length + " repas" : ""),
+      "aria-pressed": String(dateKey(date) === dateKey(selectedDate)),
+      onclick: () => { selectedDate = date; render(); },
+    },
+      el("span", { class: "calendar-day-number" }, dayNumber),
+      el("span", { class: "calendar-dots" }, ...dots));
+    cells.push(button);
+  }
+  $("calendarDays").replaceChildren(...cells);
+
+  const selectedMeals = byDay.get(dateKey(selectedDate)) || [];
+  $("selectedDate").textContent = longDate(selectedDate);
+  if (selectedDate.getMonth() !== month.getMonth() || selectedDate.getFullYear() !== month.getFullYear()) {
+    $("selectedMeals").replaceChildren(el("div", { class: "empty" }, "Choisis une date du mois pour voir ses repas."));
+  } else if (!selectedMeals.length) {
+    $("selectedMeals").replaceChildren(el("div", { class: "empty" }, "Aucun repas ce jour-là."));
+  } else {
+    $("selectedMeals").replaceChildren(...selectedMeals.map((meal) => entryCard(meal, meal.status === "pending" && meal.at <= Date.now())));
+  }
+
+  const passed = meals.filter((meal) => meal.at <= Date.now()).length;
+  const given = meals.filter((meal) => meal.status === "done").length;
+  const upcoming = meals.length - passed;
+  $("calendarStats").replaceChildren(
+    el("div", { class: "calendar-stat" }, el("strong", {}, meals.length), el("small", {}, "Prévus")),
+    el("div", { class: "calendar-stat" }, el("strong", {}, passed), el("small", {}, "Passés · " + given + " donnés")),
+    el("div", { class: "calendar-stat" }, el("strong", {}, upcoming), el("small", {}, "À venir")),
+  );
 }
 
 function catsLine(ids) {
   const cats = activeCats();
-  if (cats.length < 2) return "";
+  if (cats.length === 0) return "";
   const chosen = cats.filter((c) => (ids || []).includes(c.id));
   if (!chosen.length) return "";
   return el("div", { class: "row muted", style: "margin-top:6px" },
-    chosen.map((c) => el("span", { class: "av", style: "background:" + catColor(c) }, (c.name || "?").slice(0, 1).toUpperCase())),
+    chosen.map((c) => c.photo
+      ? el("img", { class: "av cat-photo", src: "data:image/jpeg;base64," + c.photo, alt: c.name || "Chat" })
+      : el("span", { class: "av", style: "background:" + catColor(c) }, (c.name || "?").slice(0, 1).toUpperCase())),
     chosen.map((c) => c.name).join(", "));
 }
+
+function selectTab(name) {
+  activeTab = name;
+  document.querySelectorAll(".tab").forEach((tab) => {
+    const selected = tab.id === "tab-" + name;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+  });
+  document.querySelectorAll(".panel").forEach((panel) => {
+    panel.classList.toggle("active", panel.id === "panel-" + name);
+  });
+}
+
+document.querySelectorAll(".tab").forEach((tab, index, tabs) => {
+  tab.addEventListener("click", () => selectTab(tab.id.slice(4)));
+  tab.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    event.preventDefault();
+    const step = event.key === "ArrowRight" ? 1 : -1;
+    const next = tabs[(index + step + tabs.length) % tabs.length];
+    next.focus();
+    selectTab(next.id.slice(4));
+  });
+});
 
 function toLocalInput(ms) {
   const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000);
@@ -138,6 +577,8 @@ function formFor(e) {
   const wasDone = e.status === "done";
   const d = formDraft && formDraft.id === e.id ? formDraft : {
     id: e.id,
+    productId: e.productId || "",
+    foodTypeId: (wasDone && e.givenFoodTypeId) || e.foodTypeId || e.pate,
     pate: wasDone && e.givenPate ? e.givenPate : e.pate,
     qty: wasDone ? e.givenQty : e.qty,
     note: e.note || "",
@@ -145,8 +586,26 @@ function formFor(e) {
     when: toLocalInput(wasDone && e.doneAt ? e.doneAt : (e.at < Date.now() - 86400000 ? e.at : Date.now())),
   };
   formDraft = d;
-  const sel = el("select", { onchange: (ev) => (d.pate = ev.target.value) },
-    ...Object.entries(PATES).map(([k, v]) => { const o = el("option", { value: k }, v); if (k === d.pate) o.selected = true; return o; }));
+  const choice = d.productId ? "product:" + d.productId : "type:" + d.foodTypeId;
+  const foodOptions = [
+    ...activeFoodTypes().map((type) => ["type:" + type.id, type.emoji + " " + type.name]),
+    ...activeProducts().map((product) => ["product:" + product.id, (FOOD_ICONS[product.kind] || "🥫") + " " + product.name + " · " + product.brand]),
+  ];
+  const sel = el("select", { onchange: (ev) => {
+    if (ev.target.value.startsWith("product:")) {
+      d.productId = ev.target.value.slice(8);
+      d.pate = activeProducts().find((product) => product.id === d.productId)?.kind || d.pate;
+      d.foodTypeId = d.pate;
+    } else {
+      d.productId = "";
+      d.foodTypeId = ev.target.value.slice(5);
+      d.pate = d.foodTypeId;
+    }
+  } }, ...foodOptions.map(([value, label]) => {
+    const option = el("option", { value }, label);
+    if (value === choice) option.selected = true;
+    return option;
+  }));
   const qty = el("input", { value: d.qty, placeholder: "ex : 1 sachet, 80 g", oninput: (ev) => (d.qty = ev.target.value) });
   const note = el("input", { value: d.note, placeholder: "facultatif", oninput: (ev) => (d.note = ev.target.value) });
   const when = el("input", { type: "datetime-local", value: d.when, onchange: (ev) => (d.when = ev.target.value) });
@@ -162,7 +621,7 @@ function formFor(e) {
     })));
   return el("div", { class: "form" },
     el("div", { class: "grid" },
-      el("div", {}, el("label", {}, "Pâtée donnée"), sel),
+      el("div", {}, el("label", {}, "Nourriture donnée"), sel),
       el("div", {}, el("label", {}, "Quantité"), qty)),
     catBox,
     el("label", {}, "Remarque"), note,
@@ -181,7 +640,20 @@ async function push(entry) {
 }
 function saveDone(e, d) {
   const when = d.when ? new Date(d.when).getTime() : Date.now();
-  return push({ ...e, status: "done", givenPate: d.pate, givenQty: d.qty.trim(), note: d.note.trim(), doneAt: when, catIds: d.catIds });
+  const selectedType = activeFoodTypes().find((type) => type.id === d.foodTypeId);
+  return push({
+    ...e,
+    status: "done",
+    givenPate: d.pate,
+    givenQty: d.qty.trim(),
+    note: d.note.trim(),
+    doneAt: when,
+    catIds: d.catIds,
+    productId: d.productId,
+    givenFoodTypeId: d.foodTypeId,
+    givenFoodTypeName: selectedType?.name || productFor({ productId: d.productId })?.name || "",
+    givenFoodTypeEmoji: selectedType?.emoji || foodIcon({ productId: d.productId, pate: d.pate }),
+  });
 }
 function saveSkip(e) {
   return push({ ...e, status: "skipped", givenPate: "", givenQty: "", doneAt: Date.now() });
@@ -189,17 +661,24 @@ function saveSkip(e) {
 
 function entryCard(e, over) {
   const open = openForm === e.id;
+  const product = productFor(e);
   const kids = [
     el("div", { class: "title" }, dayName(e.at) + " · " + fmtTime(e.at)),
-    badge(e.status === "done" ? (e.givenPate || e.pate) : e.pate, e.status === "done" ? e.givenQty : e.qty),
+    product
+      ? el("div", { class: "row" }, foodIcon(e) + " " + product.name + (product.brand ? " · " + product.brand : ""))
+      : el("div", { class: "row" }, foodIcon(e) + " " + foodName(e) +
+        ((e.status === "done" ? e.givenQty : e.qty) ? " · " + (e.status === "done" ? e.givenQty : e.qty) : "")),
+    product ? el("div", { class: "muted" }, priceLabel(product) +
+      (product.weight ? " · " + product.weight + " g" : "") + (e.qty ? " · " + e.qty : "")) : "",
     catsLine(e.catIds),
   ];
   if (e.status === "done") {
-    kids.push(el("div", { class: "muted" }, "✓ Donné à " + fmtTime(e.doneAt) + (e.givenPate && e.givenPate !== e.pate ? " (prévu : " + (PATES[e.pate] || e.pate) + ")" : "")));
+    kids.push(el("div", { class: "muted" }, "✓ Donné à " + fmtTime(e.doneAt) + (e.givenPate && e.givenPate !== e.pate ? " (prévu : " + foodName(e, e.foodTypeId || e.pate) + ")" : "")));
   } else if (e.status === "skipped") {
     kids.push(el("div", { class: "muted" }, "⏭ Repas passé (rien donné)"));
   }
   if (e.note) kids.push(el("div", {}, e.note));
+  if (e.photo) kids.push(el("img", { class: "meal-photo", src: "data:image/jpeg;base64," + e.photo, alt: "Photo du repas" }));
   const btnLabel = e.status === "pending" ? (over ? "Encoder" : "Donné") : "Modifier";
   if (!open) {
     kids.push(el("div", { class: "actions" }, el("button", { onclick: () => { openForm = e.id; formDraft = null; render(); } }, btnLabel)));
@@ -214,7 +693,10 @@ function render() {
   const live = state.entries.filter((e) => !e.deleted);
   const pending = live.filter((e) => e.status === "pending");
   const overdue = pending.filter((e) => e.at <= now).sort((a, b) => a.at - b.at);
-  const upcoming = pending.filter((e) => e.at > now).sort((a, b) => a.at - b.at).slice(0, 12);
+  const allUpcoming = pending.filter((e) => e.at > now).sort((a, b) => a.at - b.at);
+  const visibleUpcoming = (calendarCatId
+    ? allUpcoming.filter((entry) => (entry.catIds || []).includes(calendarCatId))
+    : allUpcoming).slice(0, 12);
   const history = live.filter((e) => e.status !== "pending").sort((a, b) => b.at - a.at).slice(0, 60);
   const plans = state.plans.filter((p) => !p.deleted).sort((a, b) => a.timeMin - b.timeMin);
 
@@ -224,13 +706,277 @@ function render() {
     nodes.forEach((n) => box.append(n));
   };
   fill("overdue", overdue.map((e) => entryCard(e, true)), "Rien à encoder 👍");
-  fill("upcoming", upcoming.map((e) => entryCard(e, false)), "Aucun repas programmé (les programmes se créent depuis l'appli du téléphone).");
+  fill("upcoming", visibleUpcoming.map((e) => entryCard(e, false)), calendarCatId
+    ? "Aucun repas programmé pour ce chat."
+    : "Aucun repas programmé (les programmes se créent depuis l'appli du téléphone).");
   fill("plans", plans.map((p) => el("div", { class: "card" },
     el("div", { class: "title" }, every(p.everyDays) + " à " + hhmm(p.timeMin) + (p.active ? "" : " (en pause)")),
-    badge(p.pate, p.qty),
+    productFor(p)
+      ? el("div", { class: "row" }, foodIcon(p) + " " + productFor(p).name + " · " + productFor(p).brand)
+    : el("div", { class: "row" }, foodIcon(p) + " " + foodName(p, p.pate) + (p.qty ? " · " + p.qty : "")),
+    productFor(p) ? el("div", { class: "muted" }, priceLabel(productFor(p)) +
+      (productFor(p).weight ? " · " + productFor(p).weight + " g" : "") + (p.qty ? " · " + p.qty : "")) : "",
+  patternForPlan(p)
+    ? el("div", { class: "muted" }, "Combinaison : " + patternForPlan(p).name)
+    : "",
     catsLine(p.catIds),
     el("div", { class: "muted" }, "À partir du " + p.start))), "Aucun programme.");
   fill("history", history.map((e) => entryCard(e, false)), "Historique vide pour l'instant.");
+  fill("products", activeProducts().map((product) => el("div", { class: "card" },
+    el("div", { class: "title" }, (FOOD_ICONS[product.kind] || "🥫") + " " + product.name),
+    el("div", { class: "muted" }, [
+      product.brand,
+      priceLabel(product),
+      product.weight ? product.weight + " g" : "",
+    ].filter(Boolean).join(" · ") || "Nourriture de base"),
+    el("div", { class: "actions" },
+      el("button", { class: "ghost", onclick: () => openProductDialog(product) }, "Modifier"),
+      product.id === "poulet" || product.id === "boeuf" ? "" :
+        el("button", { class: "ghost", onclick: () => deleteProduct(product) }, "Supprimer")))),
+    "Aucun produit dans le catalogue.");
+  renderPatterns();
+  $("count-overdue").textContent = overdue.length;
+  $("catStrip").replaceChildren(...activeCats().map((cat) =>
+    el("div", { class: "cat-pill" },
+      cat.photo
+        ? el("img", { class: "av cat-photo", src: "data:image/jpeg;base64," + cat.photo, alt: "" })
+        : el("span", { class: "av", style: "background:" + catColor(cat) }, (cat.name || "?").slice(0, 1).toUpperCase()),
+      cat.name)));
+  renderCalendar();
+  renderChats();
+}
+
+function chatMeals(cat) {
+  const now = Date.now();
+  const existing = (state.entries || []).filter((entry) => !entry.deleted && (entry.catIds || []).includes(cat.id));
+  const byId = new Map(existing.map((entry) => [entry.id, entry]));
+  const scheduled = existing.filter((entry) => entry.status === "pending" && entry.at > now);
+  const today = new Date();
+  for (const plan of state.plans || []) {
+    if (plan.deleted || !plan.active || !(plan.catIds || []).includes(cat.id)) continue;
+    const planStart = localDate(plan.start);
+    if (!planStart) continue;
+    for (let offset = 0; offset <= 60; offset++) {
+      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
+      const interval = Math.max(1, Number(plan.everyDays) || 1);
+      if (date < planStart || dayDiff(planStart, date) % interval !== 0) continue;
+      const id = plan.id + "_" + dateKey(date).replaceAll("-", "");
+      if (byId.has(id)) continue;
+      const timeMin = Number(plan.timeMin) || 0;
+      const at = new Date(date.getFullYear(), date.getMonth(), date.getDate(), Math.floor(timeMin / 60), timeMin % 60).getTime();
+      if (at <= now) continue;
+      const product = planFoodOn(plan, date, planStart);
+      const typeId = product?.kind || planPateOn(plan, date, planStart);
+      const type = activeFoodTypes().find((item) => item.id === typeId);
+      scheduled.push({
+        id, planId: plan.id, at, pate: typeId, foodTypeId: typeId,
+        foodTypeName: type?.name || "", foodTypeEmoji: type?.emoji || "",
+        qty: plan.qty || "", productId: product?.id || "", catIds: plan.catIds || [],
+        status: "pending", givenPate: "", givenQty: "", note: "", doneAt: 0, deleted: false,
+      });
+    }
+  }
+  const history = existing.filter((entry) => entry.status !== "pending")
+    .sort((a, b) => (b.doneAt || b.at) - (a.doneAt || a.at));
+  return { scheduled: scheduled.sort((a, b) => a.at - b.at).slice(0, 30), history };
+}
+
+function renderChats() {
+  const cats = activeCats();
+  if (!cats.some((cat) => cat.id === selectedChatId)) selectedChatId = cats[0]?.id || "";
+  const list = $("chatList");
+  const detail = $("chatDetail");
+  list.replaceChildren(...cats.map((cat) => {
+    const option = el("option", { value: cat.id }, cat.name);
+    option.selected = cat.id === selectedChatId;
+    return option;
+  }));
+  if (!cats.length) {
+    list.append(el("option", { value: "" }, "Aucun profil de chat"));
+    detail.replaceChildren(el("div", { class: "empty" }, "Ajoute les profils depuis l’application Android."));
+    return;
+  }
+  const cat = cats.find((item) => item.id === selectedChatId);
+  if (!cat) return;
+  const accent = catColor(cat);
+  detail.style.setProperty("--chat-accent", accent);
+  document.documentElement.style.setProperty("--primary", accent);
+  const rgb = accent.slice(1).match(/.{2}/g).map((value) => parseInt(value, 16) / 255);
+  const linear = rgb.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
+  const luminance = 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
+  document.documentElement.style.setProperty("--onprimary", luminance > 0.4 ? "#211a15" : "#fff");
+  const { scheduled, history } = chatMeals(cat);
+  detail.replaceChildren(
+    el("h3", {}, cat.name),
+    el("div", { class: "chat-color-bar", title: "Couleur du profil" }),
+    el("div", { class: "panel-heading" }, el("div", {}, el("h2", {}, "Repas prévus"), el("p", {}, "Les prochains repas associés à ce chat."))),
+    el("div", { class: "card-grid" }, ...(scheduled.length ? scheduled.map((meal) => entryCard(meal, false)) : [el("div", { class: "empty" }, "Aucun repas prévu.") ])),
+    el("div", { class: "panel-heading", style: "margin-top:24px" }, el("div", {}, el("h2", {}, "Historique"), el("p", {}, "Les repas déjà enregistrés pour ce chat."))),
+    el("div", { class: "card-grid" }, ...(history.length ? history.map((meal) => entryCard(meal, false)) : [el("div", { class: "empty" }, "Aucun repas dans l’historique.") ])),
+  );
+}
+
+function openProductDialog(product = null) {
+  editingProductId = product ? product.id : null;
+  $("productDialogTitle").textContent = product ? "Modifier la nourriture" : "Ajouter une nourriture";
+  $("productName").value = product?.name || "";
+  $("productBrand").value = product?.brand || "";
+  $("productPrice").value = product?.packPrice || "";
+  $("productWeight").value = product?.weight || "";
+  $("productError").textContent = "";
+  $("productDialog").showModal();
+}
+
+function renderPatterns() {
+  const products = activeProducts();
+  const patterns = activeFoodPatterns();
+  $("patterns").replaceChildren(...patterns.map((pattern) => {
+    const sequence = pattern.foodIds.map((id) => products.find((food) => food.id === id)?.name || id);
+    return el("div", { class: "card" },
+      el("div", { class: "title" }, pattern.name),
+      el("div", { class: "muted" }, sequence.join(" → ")),
+      el("div", { class: "actions" },
+        el("button", { class: "ghost", onclick: () => openPatternDialog(pattern) }, "Modifier"),
+        el("button", { class: "ghost", onclick: () => deletePattern(pattern) }, "Supprimer")));
+  }));
+}
+
+function renderPatternSequence() {
+  const foods = activeProducts();
+  $("patternSequence").replaceChildren(...patternDraftFoodIds.map((foodId, index) => {
+    const food = foods.find((item) => item.id === foodId);
+    return el("li", {},
+      el("span", {}, food?.name || foodId),
+      el("button", { type: "button", class: "ghost", "aria-label": "Monter", disabled: index === 0,
+        onclick: () => {
+          [patternDraftFoodIds[index - 1], patternDraftFoodIds[index]] =
+            [patternDraftFoodIds[index], patternDraftFoodIds[index - 1]];
+          renderPatternSequence();
+        } }, "↑"),
+      el("button", { type: "button", class: "ghost", "aria-label": "Descendre",
+        disabled: index === patternDraftFoodIds.length - 1,
+        onclick: () => {
+          [patternDraftFoodIds[index + 1], patternDraftFoodIds[index]] =
+            [patternDraftFoodIds[index], patternDraftFoodIds[index + 1]];
+          renderPatternSequence();
+        } }, "↓"),
+      el("button", { type: "button", class: "ghost", "aria-label": "Retirer",
+        onclick: () => {
+          patternDraftFoodIds.splice(index, 1);
+          renderPatternSequence();
+        } }, "Retirer"));
+  }));
+}
+
+function openPatternDialog(pattern = null) {
+  editingPatternId = pattern?.id || null;
+  patternDraftFoodIds = pattern ? [...pattern.foodIds] : [];
+  $("patternDialogTitle").textContent = pattern ? "Modifier la combinaison" : "Ajouter une combinaison";
+  $("patternName").value = pattern?.name || "";
+  const select = $("patternFoodSelect");
+  select.replaceChildren(...activeProducts().map((food) => el("option", { value: food.id }, food.name)));
+  $("patternError").textContent = "";
+  renderPatternSequence();
+  $("patternDialog").showModal();
+}
+
+async function savePattern(event) {
+  event.preventDefault();
+  const name = $("patternName").value.trim();
+  if (!name || patternDraftFoodIds.length < 2 ||
+      patternDraftFoodIds.some((id) => !activeProducts().some((food) => food.id === id))) {
+    $("patternError").textContent = "Indique un nom et au moins deux nourritures dans la séquence.";
+    return;
+  }
+  const pattern = {
+    id: editingPatternId || ("pattern_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8)),
+    name,
+    foodIds: [...patternDraftFoodIds],
+    deleted: false,
+    updatedAt: Date.now(),
+  };
+  const defaultsAndCurrent = activeFoodPatterns().map((item) => ({
+    ...item,
+    foodIds: item.foodIds || item.typeIds || [],
+  }));
+  try {
+    state = await api("/api/sync", {
+      plans: [], entries: [], cats: [],
+      foodPatterns: [...defaultsAndCurrent.filter((item) => item.id !== pattern.id), pattern],
+    });
+    $("patternDialog").close();
+    render();
+  } catch (err) {
+    $("patternError").textContent = "Impossible d’enregistrer la combinaison : " + err.message;
+  }
+}
+
+async function deletePattern(pattern) {
+  if (!confirm("Supprimer la combinaison « " + pattern.name + " » ?")) return;
+  const tombstone = { ...pattern, deleted: true, updatedAt: Date.now() };
+  try {
+    state = await api("/api/sync", { plans: [], entries: [], cats: [], foodPatterns: [tombstone] });
+    render();
+  } catch (err) {
+    $("banner").textContent = "Impossible de supprimer la combinaison : " + err.message;
+    $("banner").style.display = "block";
+  }
+}
+
+async function saveProduct(event) {
+  event.preventDefault();
+  const name = $("productName").value.trim();
+  const brand = $("productBrand").value.trim();
+  const price = $("productPrice").value.trim().replace(",", ".");
+  const weight = $("productWeight").value.trim().replace(",", ".");
+  const existingProduct = activeProducts().find((item) => item.id === editingProductId);
+  if (!name || !brand || !Number.isFinite(Number(price)) || Number(price) < 0) {
+    $("productError").textContent = "Indique un nom, une marque et un prix valide.";
+    return;
+  }
+  if (weight && (!Number.isFinite(Number(weight)) || Number(weight) <= 0)) {
+    $("productError").textContent = "Indique un poids positif ou laisse le champ vide.";
+    return;
+  }
+  const product = {
+    id: editingProductId || ("product_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8)),
+    name,
+    kind: existingProduct?.kind || "sachet",
+    brand,
+    packPrice: price,
+    weight,
+    deleted: false,
+    updatedAt: Date.now(),
+  };
+  try {
+    state = await api("/api/sync", { plans: [], entries: [], cats: [], products: [product] });
+    $("productDialog").close();
+    render();
+  } catch (err) {
+    $("productError").textContent = "Impossible d'enregistrer : " + err.message;
+  }
+}
+
+async function deleteProduct(product) {
+  if (product.id === "poulet" || product.id === "boeuf") return;
+  if (!confirm("Supprimer « " + product.name + " » du catalogue ?")) return;
+  const foodPatterns = activeFoodPatterns().map((pattern) => {
+    const foodIds = pattern.foodIds.filter((id) => id !== product.id);
+    return foodIds.length === pattern.foodIds.length ? pattern : {
+      ...pattern, foodIds, deleted: foodIds.length < 2, updatedAt: Date.now(),
+    };
+  });
+  try {
+    state = await api("/api/sync", {
+      plans: [], entries: [], cats: [],
+      products: [{ ...product, deleted: true, updatedAt: Date.now() }],
+      foodPatterns,
+    });
+    render();
+  } catch (err) {
+    $("banner").textContent = "Impossible de supprimer le produit : " + err.message;
+    $("banner").style.display = "block";
+  }
 }
 
 async function refresh() {
@@ -245,6 +991,55 @@ async function refresh() {
   }
 }
 $("refresh").addEventListener("click", refresh);
+$("calendarCatFilter").addEventListener("change", (event) => {
+  calendarCatId = event.target.value;
+  render();
+});
+$("chatList").addEventListener("change", (event) => {
+  selectedChatId = event.target.value;
+  renderChats();
+});
+$("addProduct").addEventListener("click", () => openProductDialog());
+$("cancelProduct").addEventListener("click", () => $("productDialog").close());
+$("productForm").addEventListener("submit", saveProduct);
+$("addPattern").addEventListener("click", () => openPatternDialog());
+$("appendPatternFood").addEventListener("click", () => {
+  if ($("patternFoodSelect").value) patternDraftFoodIds.push($("patternFoodSelect").value);
+  renderPatternSequence();
+});
+$("cancelPattern").addEventListener("click", () => $("patternDialog").close());
+$("patternForm").addEventListener("submit", savePattern);
+$("foodCategoryButton").addEventListener("click", () => {
+  $("foodCategoryButton").classList.add("active");
+  $("foodCategoryButton").setAttribute("aria-selected", "true");
+  $("patternCategoryButton").classList.remove("active");
+  $("patternCategoryButton").setAttribute("aria-selected", "false");
+  $("foodCategoryFoods").hidden = false;
+  $("foodCategoryPatterns").hidden = true;
+});
+$("patternCategoryButton").addEventListener("click", () => {
+  $("patternCategoryButton").classList.add("active");
+  $("patternCategoryButton").setAttribute("aria-selected", "true");
+  $("foodCategoryButton").classList.remove("active");
+  $("foodCategoryButton").setAttribute("aria-selected", "false");
+  $("foodCategoryFoods").hidden = true;
+  $("foodCategoryPatterns").hidden = false;
+});
+$("calendarPrev").addEventListener("click", () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  selectedDate = new Date(calendarMonth);
+  render();
+});
+$("calendarNext").addEventListener("click", () => {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  selectedDate = new Date(calendarMonth);
+  render();
+});
+$("calendarToday").addEventListener("click", () => {
+  calendarMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+  selectedDate = new Date(new Date().getFullYear(), new Date().getMonth(), new Date().getDate());
+  render();
+});
 refresh();
 setInterval(refresh, 30000);
 </script>

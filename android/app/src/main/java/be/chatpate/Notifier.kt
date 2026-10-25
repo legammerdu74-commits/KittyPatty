@@ -43,16 +43,18 @@ object Notifier {
 
     fun show(ctx: Context, e: Entry) {
         ensureChannel(ctx)
-        val allCats = Store.snapshot().cats.filter { !it.deleted }
+        val state = Store.snapshot()
+        val allCats = state.cats.filter { !it.deleted }
+        val product = state.products.firstOrNull { it.id == e.productId && !it.deleted }
         val names = allCats.filter { it.id in e.catIds }.map { it.name }
         val who = joinNames(names)
-        val pate = Pate.from(e.pate)
+        val pate = product?.name ?: e.foodTypeName.ifEmpty { pateLabel(e.pate) }
         val hour = DateTimeFormatter.ofPattern("HH:mm")
             .format(Instant.ofEpochMilli(e.at).atZone(ZoneId.systemDefault()))
         val qty = if (e.qty.isBlank()) "" else " · ${e.qty}"
         val title = if (who.isEmpty()) "Heure de la pâtée 🐾" else "Heure de la pâtée de $who 🐾"
-        val text = "Pâtée ${pate.adj}$qty"
-        val big = "Prévu à $hour\nPâtée ${pate.adj}$qty" +
+        val text = "${if (product == null) "Pâtée " else ""}$pate$qty"
+        val big = "Prévu à $hour\n${if (product == null) "Pâtée " else ""}$pate$qty" +
             (if (who.isNotEmpty()) "\nPour : $who" else "") +
             "\nAppuie pour encoder ce que tu as donné."
 

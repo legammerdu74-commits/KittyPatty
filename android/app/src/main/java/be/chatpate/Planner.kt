@@ -18,9 +18,13 @@ data class Occ(
     val qty: String,
     val catIds: List<String>,
     val entry: Entry?,
+    val productId: String = "",
+    val foodTypeId: String = "",
+    val foodTypeName: String = "",
+    val foodTypeEmoji: String = "",
 )
 
-fun Entry.toOcc() = Occ(id, at, planId, pate, qty, catIds, this)
+fun Entry.toOcc() = Occ(id, at, planId, pate, qty, catIds, this, productId, foodTypeId, foodTypeName, foodTypeEmoji)
 
 /**
  * Transforme les programmes en repas concrets pour les 2 prochaines semaines.
@@ -50,6 +54,11 @@ object Planner {
                 val at = d.atTime(p.timeMin / 60, p.timeMin % 60)
                     .atZone(zone).toInstant().toEpochMilli()
                 val id = p.id + "_" + d.toString().replace("-", "")
+                val product = p.foodProductOn(d, st.foodPatterns, st.products)
+                val productId = product?.id.orEmpty()
+                val typeId = product?.pateKey ?: p.foodTypeOn(d, st.foodPatterns)
+                val foodType = st.foodTypes.firstOrNull { it.id == typeId && !it.deleted }
+                val pate = if (typeId.isNotEmpty()) typeId else p.pateOn(d)
                 wanted.add(id)
 
                 val ex = byId[id]
@@ -58,17 +67,26 @@ object Planner {
                     if (at > now || p.updatedAt < at) {
                         changed.add(
                             Entry(
-                                id = id, planId = p.id, at = at, pate = p.pate, qty = p.qty,
-                                updatedAt = now, catIds = p.catIds,
+                                id = id, planId = p.id, at = at, pate = pate, qty = p.qty,
+                                updatedAt = now, catIds = p.catIds, productId = productId,
+                                foodTypeId = typeId,
+                                foodTypeName = foodType?.name.orEmpty(),
+                                foodTypeEmoji = foodType?.emoji.orEmpty(),
                             )
                         )
                     }
                 } else if (ex.status == Status.PENDING && at > now &&
-                    (ex.deleted || ex.at != at || ex.pate != p.pate || ex.qty != p.qty || ex.catIds != p.catIds)
+                    (ex.deleted || ex.at != at || ex.pate != pate || ex.qty != p.qty ||
+                        ex.catIds != p.catIds || ex.productId != productId ||
+                        ex.foodTypeId != typeId || ex.foodTypeName != foodType?.name.orEmpty() ||
+                        ex.foodTypeEmoji != foodType?.emoji.orEmpty())
                 ) {
                     changed.add(
                         ex.copy(
-                            at = at, pate = p.pate, qty = p.qty, catIds = p.catIds,
+                            at = at, pate = pate, qty = p.qty, catIds = p.catIds, productId = productId,
+                            foodTypeId = typeId,
+                            foodTypeName = foodType?.name.orEmpty(),
+                            foodTypeEmoji = foodType?.emoji.orEmpty(),
                             deleted = false, updatedAt = now,
                         )
                     )
@@ -115,7 +133,11 @@ object Planner {
                     val id = p.id + "_" + d.toString().replace("-", "")
                     // Dans le passé, seuls les vrais repas comptent.
                     if (id !in seen && at > now) {
-                        out.add(Occ(id, at, p.id, p.pate, p.qty, p.catIds, null))
+                        val product = p.foodProductOn(d, st.foodPatterns, st.products)
+                        val typeId = product?.pateKey ?: p.foodTypeOn(d, st.foodPatterns)
+                        val foodType = st.foodTypes.firstOrNull { it.id == typeId && !it.deleted }
+                        val pate = if (typeId.isNotEmpty()) typeId else p.pateOn(d)
+                        out.add(Occ(id, at, p.id, pate, p.qty, p.catIds, null, product?.id.orEmpty(), typeId, foodType?.name.orEmpty(), foodType?.emoji.orEmpty()))
                     }
                 }
                 d = d.plusDays(1)
