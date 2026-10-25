@@ -67,6 +67,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -78,6 +79,9 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import java.text.NumberFormat
+import java.util.Locale
 import kotlin.concurrent.thread
 
 @Composable
@@ -102,6 +106,7 @@ fun App(openEntry: MutableState<String?>) {
     var encodeId by remember { mutableStateOf<String?>(null) }
     var showNewCat by remember { mutableStateOf(false) }
     var editCatId by remember { mutableStateOf<String?>(null) }
+    var selectedCatId by remember { mutableStateOf<String?>(null) }
 
     // Revérifie les autorisations quand on revient dans l'appli.
     var tick by remember { mutableIntStateOf(0) }
@@ -136,9 +141,8 @@ fun App(openEntry: MutableState<String?>) {
             NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
                 NavTab(tab == 0, { tab = 0 }, R.drawable.ic_nav_home, "Accueil")
                 NavTab(tab == 1, { tab = 1 }, R.drawable.ic_nav_programs, "Programmes")
-                NavTab(tab == 2, { tab = 2 }, R.drawable.ic_nav_history, "Historique")
-                NavTab(tab == 3, { tab = 3 }, R.drawable.ic_nav_cats, "Chats")
-                NavTab(tab == 4, { tab = 4 }, R.drawable.ic_nav_food, "Alimentation")
+                NavTab(tab == 2, { tab = 2 }, R.drawable.ic_nav_cats, "Chats")
+                NavTab(tab == 3, { tab = 3 }, R.drawable.ic_nav_food, "Alimentation")
             }
         },
         floatingActionButton = {
@@ -148,7 +152,7 @@ fun App(openEntry: MutableState<String?>) {
                     icon = { Icon(painterResource(R.drawable.ic_action_plus), contentDescription = null) },
                     text = { Text("Programme") },
                 )
-            } else if (tab == 3) {
+            } else if (tab == 2 && cats.none { it.id == selectedCatId }) {
                 ExtendedFloatingActionButton(
                     onClick = { showNewCat = true },
                     icon = { Icon(painterResource(R.drawable.ic_action_plus), contentDescription = null) },
@@ -185,21 +189,17 @@ fun App(openEntry: MutableState<String?>) {
                 },
             )
 
-            2 -> HistoryScreen(
-                entries = state.entries
-                    .filter { !it.deleted && it.status != Status.PENDING }
-                    .sortedByDescending { it.at }
-                    .take(200),
-                cats = cats,
-                products = state.products,
-                modifier = mod,
-                onOpen = { encodeId = it },
-            )
-
-            3 -> CatsScreen(
+            2 -> CatsScreen(
                 cats = cats,
                 plans = state.plans.filter { !it.deleted },
+                entries = state.entries.filter { !it.deleted },
+                products = state.products,
+                foodPatterns = state.foodPatterns,
+                selectedCatId = selectedCatId,
                 modifier = mod,
+                onSelect = { selectedCatId = it },
+                onBack = { selectedCatId = null },
+                onOpenEntry = { encodeId = it },
                 onEdit = { editCatId = it },
             )
 
@@ -775,30 +775,39 @@ fun StatTile(label: String, value: String, sub: String, modifier: Modifier) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
         shape = MaterialTheme.shapes.large,
-        modifier = modifier,
+        modifier = modifier.height(96.dp),
     ) {
         Column(
             Modifier
-                .fillMaxWidth()
-                .padding(vertical = 12.dp, horizontal = 8.dp),
+                .fillMaxSize()
+                .padding(vertical = 8.dp, horizontal = 6.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
         ) {
             Text(
                 value,
-                style = MaterialTheme.typography.headlineMedium,
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 label,
-                style = MaterialTheme.typography.labelLarge,
+                style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
+                maxLines = 1,
+                softWrap = false,
+                overflow = TextOverflow.Ellipsis,
             )
             Text(
                 sub,
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -1130,22 +1139,30 @@ private fun FoodManagementScreen(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             if (category == 0) {
-                Button(onClick = { category = 0 }, modifier = Modifier.weight(1f).height(52.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    ButtonLabel(R.drawable.ic_nav_food, "Nourriture")
-                }
+                Button(
+                    onClick = { category = 0 },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) { ButtonLabel(R.drawable.ic_nav_food, "Nourriture") }
             } else {
-                OutlinedButton(onClick = { category = 0 }, modifier = Modifier.weight(1f).height(52.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    ButtonLabel(R.drawable.ic_nav_food, "Nourriture")
-                }
+                OutlinedButton(
+                    onClick = { category = 0 },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) { ButtonLabel(R.drawable.ic_nav_food, "Nourriture") }
             }
             if (category == 1) {
-                Button(onClick = { category = 1 }, modifier = Modifier.weight(1f).height(52.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons")
-                }
+                Button(
+                    onClick = { category = 1 },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) { ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons") }
             } else {
-                OutlinedButton(onClick = { category = 1 }, modifier = Modifier.weight(1f).height(52.dp), contentPadding = PaddingValues(horizontal = 12.dp)) {
-                    ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons")
-                }
+                OutlinedButton(
+                    onClick = { category = 1 },
+                    modifier = Modifier.weight(1f).height(52.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
+                ) { ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons") }
             }
         }
 
@@ -1222,88 +1239,193 @@ private fun FoodManagementScreen(
 }
 
 // ---------------------------------------------------------------------------------------------
-// Onglet "Historique"
+// Onglet "Chats" et détail d'un profil
 // ---------------------------------------------------------------------------------------------
 
-@Composable
-fun HistoryScreen(
-    entries: List<Entry>,
-    cats: List<Cat>,
-    products: List<FoodProduct>,
-    modifier: Modifier,
-    onOpen: (String) -> Unit,
-) {
-    val now by rememberNow()
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        if (entries.isEmpty()) {
-            item {
-                EmptyState(
-                    R.drawable.ic_nav_history,
-                    "Rien dans l'historique pour l'instant.\nLes repas que tu encodes apparaîtront ici."
-                )
-            }
-        }
-        items(entries, key = { it.id }) { e ->
-            MealCard(e.toOcc(), cats, products, now, onOpen, null)
-        }
+private data class FoodQuantity(val amount: Double, val isGrams: Boolean)
+private data class MonthlyFoodCost(val amount: Double, val unpricedMeals: Int)
+
+private fun parseFoodQuantity(value: String): FoodQuantity? {
+    val match = Regex("""^\s*(\d+(?:[.,]\d+)?)\s*(g|gr|grammes?|sachets?|portions?)?\b""", RegexOption.IGNORE_CASE)
+        .find(value) ?: return null
+    val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
+    val unit = match.groupValues[2].lowercase(Locale.ROOT)
+    return when {
+        unit.startsWith("g") -> FoodQuantity(amount, true)
+        unit.isNotEmpty() -> FoodQuantity(amount, false)
+        else -> null
     }
 }
 
-// ---------------------------------------------------------------------------------------------
-// Onglet "Chats"
-// ---------------------------------------------------------------------------------------------
+private fun gramsFor(quantity: String, product: FoodProduct?): Double? {
+    val parsed = parseFoodQuantity(quantity) ?: return null
+    if (parsed.isGrams) return parsed.amount
+    val weight = product?.weight?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+    return parsed.amount * weight
+}
+
+private fun costFor(quantity: String, product: FoodProduct?): Double? {
+    val parsed = parseFoodQuantity(quantity) ?: return null
+    val price = product?.packPrice?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
+    if (!parsed.isGrams) return parsed.amount * price
+    val weight = product.weight.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 } ?: return null
+    return parsed.amount / weight * price
+}
+
+private fun monthlyFoodCost(
+    catId: String,
+    plans: List<Plan>,
+    patterns: List<FoodPattern>,
+    products: List<FoodProduct>,
+    today: LocalDate,
+): MonthlyFoodCost {
+    var amount = 0.0
+    var unpriced = 0
+    for (plan in plans) {
+        if (!plan.active || plan.deleted || catId !in plan.catIds) continue
+        val start = runCatching { LocalDate.parse(plan.start) }.getOrNull() ?: continue
+        for (offset in 0L until 30L) {
+            val date = today.plusDays(offset)
+            if (date.isBefore(start) || ChronoUnit.DAYS.between(start, date) % plan.everyDays.coerceAtLeast(1) != 0L) continue
+            val product = plan.foodProductOn(date, patterns, products)
+            val mealCost = costFor(plan.qty, product)
+            if (mealCost == null) {
+                unpriced++
+            } else {
+                amount += mealCost / plan.catIds.distinct().size.coerceAtLeast(1)
+            }
+        }
+    }
+    return MonthlyFoodCost(amount, unpriced)
+}
+
+private fun formatGrams(grams: Double): String = if (grams >= 1000) {
+    String.format(Locale.FRANCE, "%.2f kg", grams / 1000).replace(",00", "")
+} else {
+    "${grams.toLong()} g"
+}
 
 @Composable
 fun CatsScreen(
     cats: List<Cat>,
     plans: List<Plan>,
+    entries: List<Entry>,
+    products: List<FoodProduct>,
+    foodPatterns: List<FoodPattern>,
+    selectedCatId: String?,
     modifier: Modifier,
+    onSelect: (String) -> Unit,
+    onBack: () -> Unit,
+    onOpenEntry: (String) -> Unit,
     onEdit: (String) -> Unit,
 ) {
-    LazyColumn(
-        modifier = modifier,
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        items(cats, key = { it.id }) { cat ->
-            val n = plans.count { cat.id in it.catIds }
-            Card(
-                onClick = { onEdit(cat.id) },
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceContainerHighest
-                ),
-                shape = MaterialTheme.shapes.large,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CatAvatar(cat, 52.dp)
-                    Spacer(Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            cat.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            if (n == 0) "Aucun programme" else if (n == 1) "1 programme" else "$n programmes",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+    val selectedCat = cats.firstOrNull { it.id == selectedCatId }
+    if (selectedCat == null) {
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(cats, key = { it.id }) { cat ->
+                val count = plans.count { cat.id in it.catIds }
+                Card(
+                    onClick = { onSelect(cat.id) },
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                    shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                        CatAvatar(cat, 52.dp)
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text(cat.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            Text(
+                                if (count == 0) "Aucun programme" else if (count == 1) "1 programme" else "$count programmes",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Text("Voir statistiques et historique ›", style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
             }
+            item {
+                Text(
+                    "Un repas partagé entre plusieurs chats est réparti équitablement dans les statistiques.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                )
+            }
         }
-        item {
-            Text(
-                "Un repas peut concerner un ou plusieurs chats : tu les choisis quand tu crées un programme ou quand tu encodes un repas.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
-            )
+    } else {
+        val now by rememberNow()
+        val history = entries.filter {
+            selectedCat.id in it.catIds && it.status != Status.PENDING
+        }.sortedByDescending { if (it.doneAt > 0) it.doneAt else it.at }
+        val completed = history.filter { it.status == Status.DONE }
+        val totalGrams = completed.sumOf { entry ->
+            val quantity = entry.givenQty.ifBlank { entry.qty }
+            val product = products.firstOrNull { it.id == entry.productId }
+            (gramsFor(quantity, product) ?: 0.0) / entry.catIds.distinct().size.coerceAtLeast(1)
+        }
+        val cost = monthlyFoodCost(
+            selectedCat.id, plans, foodPatterns, products, LocalDate.now(),
+        )
+        val currency = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("fr-BE"))
+        LazyColumn(
+            modifier = modifier,
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            item {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    TextButton(onClick = onBack) { Text("‹ Chats") }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { onEdit(selectedCat.id) }) { Text("Modifier le profil") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CatAvatar(selectedCat, 56.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(selectedCat.name, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                }
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    StatTile("Mangé", formatGrams(totalGrams), "quantités enregistrées", Modifier.weight(1f))
+                    StatTile(
+                        "Coût estimé",
+                        when {
+                            cost.unpricedMeals > 0 && cost.amount > 0 -> "≥ ${currency.format(cost.amount)}"
+                            cost.unpricedMeals > 0 || cost.amount == 0.0 -> "—"
+                            else -> currency.format(cost.amount)
+                        },
+                        if (cost.unpricedMeals > 0) "sur 30 jours · ${cost.unpricedMeals} repas incomplets" else "sur 30 jours",
+                        Modifier.weight(1f),
+                    )
+                }
+            }
+            item {
+                Text(
+                    "Le coût est estimé à partir des programmes des 30 prochains jours. Les repas partagés sont répartis entre les chats ; les produits sans prix ou quantité ne sont pas comptés.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            item {
+                Text(
+                    "Historique · ${completed.size} repas donnés",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+            if (history.isEmpty()) {
+                item { EmptyState("😸", "Rien dans l'historique pour ce chat pour l'instant.") }
+            } else {
+                items(history, key = { it.id }) { entry ->
+                    MealCard(entry.toOcc(), cats, products, now, onOpenEntry, null)
+                }
+            }
         }
     }
 }
