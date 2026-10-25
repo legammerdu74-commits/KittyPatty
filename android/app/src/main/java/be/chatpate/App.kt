@@ -1420,7 +1420,7 @@ fun CatsScreen(
                 )
             }
             if (history.isEmpty()) {
-                item { EmptyState("😸", "Rien dans l'historique pour ce chat pour l'instant.") }
+                item { EmptyState(R.drawable.ic_nav_cats, "Rien dans l'historique pour ce chat pour l'instant.") }
             } else {
                 items(history, key = { it.id }) { entry ->
                     MealCard(entry.toOcc(), cats, products, now, onOpenEntry, null)
