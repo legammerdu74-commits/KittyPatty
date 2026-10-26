@@ -100,6 +100,7 @@ data class FoodProduct(
     val weight: String = "",
     val deleted: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
+    val stockCount: Int? = null,
 ) {
     val pateKey: String
         get() = when (kind) {
@@ -117,6 +118,7 @@ data class FoodProduct(
         .put("weight", weight)
         .put("deleted", deleted)
         .put("updatedAt", updatedAt)
+        .put("stockCount", stockCount ?: JSONObject.NULL)
 
     companion object {
         fun fromJson(o: JSONObject) = FoodProduct(
@@ -128,7 +130,30 @@ data class FoodProduct(
             weight = o.optString("weight", ""),
             deleted = o.optBoolean("deleted", false),
             updatedAt = o.optLong("updatedAt", 0L),
+            stockCount = if (o.isNull("stockCount")) null else o.optInt("stockCount").coerceAtLeast(0),
         )
+    }
+}
+
+data class StockSettings(
+    val warningThreshold: Int = 5,
+    val lowThreshold: Int = 2,
+    val updatedAt: Long = 0L,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("warningThreshold", warningThreshold)
+        .put("lowThreshold", lowThreshold)
+        .put("updatedAt", updatedAt)
+
+    companion object {
+        fun fromJson(o: JSONObject): StockSettings {
+            val warning = o.optInt("warningThreshold", 5).coerceAtLeast(0)
+            return StockSettings(
+                warningThreshold = warning,
+                lowThreshold = o.optInt("lowThreshold", 2).coerceIn(0, warning),
+                updatedAt = o.optLong("updatedAt", 0L),
+            )
+        }
     }
 }
 
@@ -331,6 +356,8 @@ data class Entry(
     val givenFoodTypeName: String = "",
     val givenFoodTypeEmoji: String = "",
     val permanentlyDeleted: Boolean = false,
+    val stockDeductedProductId: String = "",
+    val stockDeductedCount: Int = 0,
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -356,6 +383,8 @@ data class Entry(
         .put("givenFoodTypeName", givenFoodTypeName)
         .put("givenFoodTypeEmoji", givenFoodTypeEmoji)
         .put("permanentlyDeleted", permanentlyDeleted)
+        .put("stockDeductedProductId", stockDeductedProductId)
+        .put("stockDeductedCount", stockDeductedCount)
 
     companion object {
         fun fromJson(o: JSONObject): Entry = Entry(
@@ -382,6 +411,8 @@ data class Entry(
             givenFoodTypeName = o.optString("givenFoodTypeName", ""),
             givenFoodTypeEmoji = o.optString("givenFoodTypeEmoji", ""),
             permanentlyDeleted = o.optBoolean("permanentlyDeleted", false),
+            stockDeductedProductId = o.optString("stockDeductedProductId", ""),
+            stockDeductedCount = o.optInt("stockDeductedCount", 0).coerceAtLeast(0),
         )
     }
 }
@@ -394,6 +425,7 @@ data class AppState(
     val foodTypes: List<FoodType> = defaultFoodTypes(),
     val foodPatterns: List<FoodPattern> = defaultFoodPatterns(),
     val kibblePackages: List<KibblePackage> = emptyList(),
+    val stockSettings: StockSettings = StockSettings(),
 )
 
 fun parsePlans(arr: JSONArray?): List<Plan> {

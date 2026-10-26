@@ -10,12 +10,14 @@
 - **Rappels** : reçois une notification à l’heure prévue. Marque le repas comme donné directement depuis la notification ou encode ce qui a réellement été servi, avec quantité, note et photo facultative.
 - **Calendrier et historique** : visualise les repas du mois, filtre le calendrier par chat, retrouve les repas donnés et corrige ou supprime un encodage. Les repas futurs supprimés peuvent être remis au programme.
 - **Profils de chats** : ajoute une photo et une couleur à chaque profil, puis consulte son historique, les quantités enregistrées et son estimation de coût pour le mois civil.
-- **Catalogue alimentaire** : enregistre les nourritures avec leur marque, leur prix et leur poids. Réutilise-les dans les programmes ou compose des séquences comme « bœuf → poulet ».
+- **Catalogue alimentaire** : enregistre les nourritures avec leur marque, leur prix et leur poids. Suis le nombre de sachets disponibles ; le stock baisse quand un repas est marqué comme donné, et remonte si tu annules ou supprimes son encodage. Les seuils orange et rouge se règlent dans les paramètres et s’appliquent à toutes les nourritures. Réutilise les produits dans les programmes ou compose des séquences comme « bœuf → poulet ».
 - **Suivi des croquettes** : note la marque, le goût, la spécificité (par ex. Urinary ou Senior), le prix, la date d’ajout/ouverture et les chats qui partagent le paquet. Termine-le pour connaître sa durée.
 - **Coût mensuel estimé** : les repas partagés sont répartis entre les chats concernés. Le prix d’un paquet de croquettes est amorti sur sa durée et partagé entre les chats sélectionnés ; pour un paquet encore ouvert, le calcul utilise la durée écoulée.
 - **Photos** : ajoute une photo de profil ou de repas depuis l’appareil photo ou la galerie. Les images sont réduites avant d’être enregistrées.
 
 > 💡 Pour éviter les ambiguïtés de quantité, saisis par exemple `1 sachet` ou `85 g`. Une ancienne quantité sans unité qui correspond exactement au poids du produit est considérée comme des grammes.
+
+Le stock est retiré lorsque le repas est confirmé comme donné (et non à la seule heure prévue). La quantité en sachets/portions est arrondie à l’unité supérieure ; les grammes sont convertis selon le poids enregistré pour le produit.
 
 ### Quelques moustaches en images
 

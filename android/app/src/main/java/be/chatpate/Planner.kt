@@ -98,10 +98,15 @@ object Planner {
             }
         }
 
-        // Repas à venir qui ne correspondent plus à aucun programme (programme supprimé, désactivé, modifié).
+        // Supprime aussi les repas en attente déjà passés d'un programme supprimé.
         for (e in st.entries) {
-            if (!e.deleted && e.status == Status.PENDING && e.at > now && e.id !in wanted) {
-                changed.add(e.copy(deleted = true, updatedAt = now))
+            if (e.status == Status.PENDING && e.id !in wanted) {
+                val planDeleted = st.plans.firstOrNull { it.id == e.planId }?.deleted == true
+                if (planDeleted && !e.permanentlyDeleted) {
+                    changed.add(e.copy(deleted = true, permanentlyDeleted = true, updatedAt = now))
+                } else if (!e.deleted && e.at > now) {
+                    changed.add(e.copy(deleted = true, updatedAt = now))
+                }
             }
         }
 

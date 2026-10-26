@@ -22,6 +22,10 @@ object Sync {
 
     fun run(ctx: Context, timeoutMs: Int = 8000): Boolean {
         val app = ctx.applicationContext
+        if (!Prefs.serverEnabled(app)) {
+            _status.value = ""
+            return false
+        }
         val base = Prefs.serverUrl(app).trim().trimEnd('/')
         if (base.isEmpty()) {
             _status.value = ""
@@ -47,7 +51,7 @@ object Sync {
             snap.kibblePackages.forEach { kibblePackages.put(it.toJson()) }
             val body = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats)
                 .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns)
-                .put("kibblePackages", kibblePackages).toString()
+                .put("kibblePackages", kibblePackages).put("stockSettings", snap.stockSettings.toJson()).toString()
 
             val url = if (base.startsWith("http://") || base.startsWith("https://")) base else "http://$base"
             conn = URL("$url/api/sync").openConnection() as HttpURLConnection
@@ -79,6 +83,7 @@ object Sync {
                 parseFoodTypes(o.optJSONArray("foodTypes")),
                 parseFoodPatterns(o.optJSONArray("foodPatterns")),
                 parseKibblePackages(o.optJSONArray("kibblePackages")),
+                o.optJSONObject("stockSettings")?.let(StockSettings::fromJson),
             )
             if (changed) {
                 Planner.reconcile()

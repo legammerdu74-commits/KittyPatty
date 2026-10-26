@@ -15,11 +15,19 @@ object Prefs {
     fun legacyCatName(ctx: Context): String = p(ctx).getString("catName", "Mon chat") ?: "Mon chat"
     fun serverUrl(ctx: Context): String = p(ctx).getString("serverUrl", "") ?: ""
     fun token(ctx: Context): String = p(ctx).getString("token", "") ?: ""
+    fun serverEnabled(ctx: Context): Boolean {
+        val prefs = p(ctx)
+        if (prefs.contains("serverEnabled")) return prefs.getBoolean("serverEnabled", false)
+        val enabled = prefs.getString("serverUrl", "").orEmpty().isNotBlank()
+        prefs.edit().putBoolean("serverEnabled", enabled).apply()
+        return enabled
+    }
 
-    fun saveServer(ctx: Context, serverUrl: String, token: String) {
+    fun saveServer(ctx: Context, serverUrl: String, token: String, enabled: Boolean) {
         p(ctx).edit()
             .putString("serverUrl", serverUrl.trim())
             .putString("token", token.trim())
+            .putBoolean("serverEnabled", enabled)
             .apply()
     }
 }
@@ -57,6 +65,8 @@ object Store {
                             !plan.alternatePate && legacyFood != null
                         ) plan.copy(productId = legacyFood.id) else plan
                     }
+                    val stockSettings = o.optJSONObject("stockSettings")?.let(StockSettings::fromJson)
+                        ?: legacyStockSettings(o.optJSONArray("products"))
                     _state.value = AppState(
                         plans = plans,
                         entries = parseEntries(o.optJSONArray("entries")),
@@ -65,6 +75,7 @@ object Store {
                         foodTypes = foodTypes,
                         foodPatterns = ensureFoodPatterns(parseFoodPatterns(o.optJSONArray("foodPatterns"))),
                         kibblePackages = parseKibblePackages(o.optJSONArray("kibblePackages")),
+                        stockSettings = stockSettings,
                     )
                 }
 
@@ -98,6 +109,21 @@ object Store {
 
     private fun ensureFoodPatterns(patterns: List<FoodPattern>): List<FoodPattern> =
         (patterns + defaultFoodPatterns()).distinctBy { it.id }
+
+    private fun legacyStockSettings(products: JSONArray?): StockSettings {
+        if (products == null) return StockSettings()
+        for (i in 0 until products.length()) {
+            val product = runCatching { products.getJSONObject(i) }.getOrNull() ?: continue
+            if (!product.has("stockWarningThreshold") && !product.has("stockLowThreshold")) continue
+            val warning = product.optInt("stockWarningThreshold", 5).coerceAtLeast(0)
+            return StockSettings(
+                warningThreshold = warning,
+                lowThreshold = product.optInt("stockLowThreshold", 2).coerceIn(0, warning),
+                updatedAt = System.currentTimeMillis(),
+            )
+        }
+        return StockSettings()
+    }
 
     fun snapshot(): AppState = _state.value
 
@@ -137,6 +163,19 @@ object Store {
             state.copy(products = if (exists) {
                 state.products.map { if (it.id == updated.id) updated else it }
             } else state.products + updated)
+        }
+    }
+
+    fun upsertStockSettings(settings: StockSettings) {
+        mutate { state ->
+            val warning = settings.warningThreshold.coerceAtLeast(0)
+            state.copy(
+                stockSettings = settings.copy(
+                    lowThreshold = settings.lowThreshold.coerceIn(0, warning),
+                    warningThreshold = warning,
+                    updatedAt = maxOf(System.currentTimeMillis(), state.stockSettings.updatedAt + 1),
+                ),
+            )
         }
     }
 
@@ -260,48 +299,80 @@ object Store {
         productId: String? = null,
         foodTypeId: String? = null,
     ) {
-        val e = get(id) ?: return
-        upsertEntries(
-            listOf(
-                e.copy(
-                    status = Status.DONE,
-                    deleted = false,
-                    permanentlyDeleted = false,
-                    givenPate = givenPate,
-                    givenQty = givenQty,
-                    note = note,
-                    doneAt = doneAt,
-                    catIds = catIds ?: e.catIds,
-                    photo = photo ?: e.photo,
-                    productId = productId ?: e.productId,
-                    givenFoodTypeId = foodTypeId ?: e.givenFoodTypeId,
-                    givenFoodTypeName = foodTypeId?.let { typeId ->
-                        _state.value.foodTypes.firstOrNull { it.id == typeId }?.name
-                    } ?: e.givenFoodTypeName,
-                    givenFoodTypeEmoji = foodTypeId?.let { typeId ->
-                        _state.value.foodTypes.firstOrNull { it.id == typeId }?.emoji
-                    } ?: e.givenFoodTypeEmoji,
-                    updatedAt = System.currentTimeMillis(),
-                )
+        mutate { state ->
+            val e = state.entries.firstOrNull { it.id == id } ?: return@mutate state
+            val now = System.currentTimeMillis()
+            val targetProductId = productId ?: e.productId
+            val selectedTypeId = foodTypeId ?: e.givenFoodTypeId
+            val product = state.products.firstOrNull { it.id == targetProductId && !it.deleted }
+                ?: state.products.firstOrNull {
+                    !it.deleted && (it.id == selectedTypeId || it.kind == selectedTypeId ||
+                        it.id == givenPate || it.kind == givenPate)
+                }
+            val shouldTrack = e.status != Status.DONE || e.stockDeductedProductId.isNotEmpty()
+            var products = state.products
+            var deductedProductId = e.stockDeductedProductId
+            var deductedCount = e.stockDeductedCount
+            if (shouldTrack) {
+                if (e.stockDeductedProductId.isNotEmpty() && e.stockDeductedCount > 0) {
+                    products = adjustStock(products, e.stockDeductedProductId, e.stockDeductedCount.toLong(), now)
+                }
+                deductedProductId = product?.id.orEmpty()
+                deductedCount = if (product?.stockCount != null) stockUnits(givenQty.ifBlank { e.qty }, product) else 0
+                if (deductedProductId.isNotEmpty() && deductedCount > 0) {
+                    products = adjustStock(products, deductedProductId, -deductedCount.toLong(), now)
+                }
+            }
+            val updatedEntry = e.copy(
+                status = Status.DONE,
+                deleted = false,
+                permanentlyDeleted = false,
+                givenPate = givenPate,
+                givenQty = givenQty,
+                note = note,
+                doneAt = doneAt,
+                catIds = catIds ?: e.catIds,
+                photo = photo ?: e.photo,
+                productId = targetProductId,
+                givenFoodTypeId = foodTypeId ?: e.givenFoodTypeId,
+                givenFoodTypeName = foodTypeId?.let { typeId ->
+                    _state.value.foodTypes.firstOrNull { it.id == typeId }?.name
+                } ?: e.givenFoodTypeName,
+                givenFoodTypeEmoji = foodTypeId?.let { typeId ->
+                    _state.value.foodTypes.firstOrNull { it.id == typeId }?.emoji
+                } ?: e.givenFoodTypeEmoji,
+                stockDeductedProductId = deductedProductId,
+                stockDeductedCount = deductedCount,
+                updatedAt = now,
             )
-        )
+            state.copy(
+                entries = state.entries.map { if (it.id == id) updatedEntry else it },
+                products = products,
+            )
+        }
     }
 
     fun markSkipped(id: String) {
-        val e = get(id) ?: return
-        upsertEntries(
-            listOf(
-                e.copy(
-                    status = Status.SKIPPED,
-                    deleted = false,
-                    permanentlyDeleted = false,
-                    givenPate = "",
-                    givenQty = "",
-                    doneAt = System.currentTimeMillis(),
-                    updatedAt = System.currentTimeMillis(),
-                )
+        mutate { state ->
+            val e = state.entries.firstOrNull { it.id == id } ?: return@mutate state
+            val now = System.currentTimeMillis()
+            val products = restoreStockForEntry(state.products, e, now)
+            val updatedEntry = e.copy(
+                status = Status.SKIPPED,
+                deleted = false,
+                permanentlyDeleted = false,
+                givenPate = "",
+                givenQty = "",
+                doneAt = now,
+                stockDeductedProductId = "",
+                stockDeductedCount = 0,
+                updatedAt = now,
             )
-        )
+            state.copy(
+                entries = state.entries.map { if (it.id == id) updatedEntry else it },
+                products = products,
+            )
+        }
     }
 
     fun deleteEntry(id: String) {
@@ -309,6 +380,7 @@ object Store {
             val entry = state.entries.firstOrNull { it.id == id } ?: return@mutate state
             if (entry.status == Status.PENDING) return@mutate state
             val now = System.currentTimeMillis()
+            val products = restoreStockForEntry(state.products, entry, now)
             val plannedTypeId = entry.foodTypeId.ifEmpty { entry.pate }
             val existingProduct = state.products.firstOrNull {
                 it.id == entry.productId && !it.deleted && it.pateKey == plannedTypeId
@@ -333,8 +405,13 @@ object Store {
                 givenFoodTypeId = "",
                 givenFoodTypeName = "",
                 givenFoodTypeEmoji = "",
+                stockDeductedProductId = "",
+                stockDeductedCount = 0,
             )
-            state.copy(entries = state.entries.map { if (it.id == id) cleared else it })
+            state.copy(
+                entries = state.entries.map { if (it.id == id) cleared else it },
+                products = products,
+            )
         }
     }
 
@@ -342,6 +419,7 @@ object Store {
         mutate { state ->
             val entry = state.entries.firstOrNull { it.id == id } ?: return@mutate state
             val now = System.currentTimeMillis()
+            val products = restoreStockForEntry(state.products, entry, now)
             val removed = entry.copy(
                 status = Status.PENDING,
                 givenPate = "",
@@ -357,8 +435,13 @@ object Store {
                 productId = entry.plannedProductId.ifEmpty { entry.foodTypeId },
                 catIds = emptyList(),
                 permanentlyDeleted = true,
+                stockDeductedProductId = "",
+                stockDeductedCount = 0,
             )
-            state.copy(entries = state.entries.map { if (it.id == id) removed else it })
+            state.copy(
+                entries = state.entries.map { if (it.id == id) removed else it },
+                products = products,
+            )
         }
     }
 
@@ -371,6 +454,7 @@ object Store {
         remoteFoodTypes: List<FoodType> = emptyList(),
         remoteFoodPatterns: List<FoodPattern> = emptyList(),
         remoteKibblePackages: List<KibblePackage> = emptyList(),
+        remoteStockSettings: StockSettings? = null,
     ): Boolean {
         var changed = false
         mutate { s ->
@@ -437,6 +521,9 @@ object Store {
                     changed = true
                 }
             }
+            val stockSettings = remoteStockSettings?.takeIf { it.updatedAt >= s.stockSettings.updatedAt }
+                ?: s.stockSettings
+            if (stockSettings != s.stockSettings) changed = true
             if (changed) s.copy(
                 plans = pm.values.toList(),
                 entries = em.values.toList(),
@@ -445,9 +532,46 @@ object Store {
                 foodTypes = tm.values.toList(),
                 foodPatterns = patternMap.values.toList(),
                 kibblePackages = packageMap.values.toList(),
+                stockSettings = stockSettings,
             ) else s
         }
         return changed
+    }
+
+    private fun adjustStock(
+        products: List<FoodProduct>,
+        productId: String,
+        delta: Long,
+        updatedAt: Long,
+    ): List<FoodProduct> = products.map { product ->
+        if (product.id != productId || product.stockCount == null) product
+        else product.copy(
+            stockCount = (product.stockCount.toLong() + delta).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt(),
+            updatedAt = updatedAt,
+        )
+    }
+
+    private fun restoreStockForEntry(
+        products: List<FoodProduct>,
+        entry: Entry,
+        updatedAt: Long,
+    ): List<FoodProduct> =
+        if (entry.stockDeductedProductId.isNotEmpty() && entry.stockDeductedCount > 0) {
+            adjustStock(products, entry.stockDeductedProductId, entry.stockDeductedCount.toLong(), updatedAt)
+        } else products
+
+    private fun stockUnits(quantity: String, product: FoodProduct): Int {
+        val match = Regex("""^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ÿ]*)""").find(quantity)
+            ?: return 1
+        val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull() ?: return 1
+        if (amount <= 0.0) return 0
+        val unit = match.groupValues[2].lowercase()
+        val weight = product.weight.replace(',', '.').toDoubleOrNull()
+        val isGrams = unit.startsWith("g") || (unit.isEmpty() && weight != null && amount == weight)
+        val units = if (isGrams) {
+            if (weight != null && weight > 0.0) kotlin.math.ceil(amount / weight) else 1.0
+        } else kotlin.math.ceil(amount)
+        return units.coerceIn(0.0, Int.MAX_VALUE.toDouble()).toInt()
     }
 
     private fun mutate(f: (AppState) -> AppState) {
@@ -480,7 +604,7 @@ object Store {
             s.kibblePackages.forEach { kibblePackages.put(it.toJson()) }
             val txt = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats)
                 .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns)
-                .put("kibblePackages", kibblePackages).toString()
+                .put("kibblePackages", kibblePackages).put("stockSettings", s.stockSettings.toJson()).toString()
             val tmp = File(f.parentFile, "state.json.tmp")
             tmp.writeText(txt)
             if (!tmp.renameTo(f)) {

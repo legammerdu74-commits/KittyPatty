@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -398,8 +399,10 @@ fun ProductCatalogDialog(
     var brand by remember(initialProductId) { mutableStateOf(initialProduct?.brand.orEmpty()) }
     var price by remember(initialProductId) { mutableStateOf(initialProduct?.packPrice.orEmpty()) }
     var weight by remember(initialProductId) { mutableStateOf(initialProduct?.weight.orEmpty()) }
+    var stockCount by remember(initialProductId) { mutableStateOf(initialProduct?.stockCount?.toString().orEmpty()) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val selected = products.firstOrNull { it.id == selectedId && !it.deleted }
+    val parsedStock = stockCount.toIntOrNull()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -425,6 +428,14 @@ fun ProductCatalogDialog(
                     placeholder = { Text("ex. 85") },
                     singleLine = true,
                 )
+                Text("Stock disponible", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    stockCount,
+                    { stockCount = it.filter(Char::isDigit) },
+                    label = { Text("Nombre de sachets / portions") },
+                    placeholder = { Text("Laisser vide pour ne pas suivre le stock") },
+                    singleLine = true,
+                )
             }
         },
         confirmButton = {
@@ -442,6 +453,7 @@ fun ProductCatalogDialog(
                                 brand = ""
                                 price = ""
                                 weight = ""
+                                stockCount = ""
                             },
                         ) {
                             Icon(
@@ -474,7 +486,8 @@ fun ProductCatalogDialog(
                     Button(
                         enabled = name.isNotBlank() && brand.isNotBlank() &&
                             (price.replace(',', '.').toDoubleOrNull()?.let { it >= 0 } == true) &&
-                            (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true),
+                            (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true) &&
+                            (stockCount.isBlank() || (parsedStock != null && parsedStock >= 0)),
                         onClick = {
                             onSave(
                                 FoodProduct(
@@ -484,6 +497,7 @@ fun ProductCatalogDialog(
                                     brand = brand.trim(),
                                     packPrice = price.trim().replace(',', '.'),
                                     weight = weight.trim().replace(',', '.'),
+                                    stockCount = parsedStock,
                                 )
                             )
                             onDismiss()
@@ -962,13 +976,25 @@ fun SettingsDialog(
     syncStatus: String,
     updateMessage: String,
     checkingUpdates: Boolean,
+    serverEnabled: Boolean,
+    stockSettings: StockSettings,
     onCheckUpdates: () -> Unit,
-    onSave: (serverUrl: String, token: String) -> Unit,
+    onSave: (serverUrl: String, token: String, serverEnabled: Boolean, stockSettings: StockSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val ctx = LocalContext.current
+    val appVersion = remember { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName.orEmpty() }
     var url by remember { mutableStateOf(Prefs.serverUrl(ctx)) }
     var token by remember { mutableStateOf(Prefs.token(ctx)) }
+    var serverEnabled by remember { mutableStateOf(serverEnabled) }
+    var warningThreshold by remember(stockSettings) {
+        mutableStateOf(stockSettings.warningThreshold.toString())
+    }
+    var lowThreshold by remember(stockSettings) {
+        mutableStateOf(stockSettings.lowThreshold.toString())
+    }
+    val warning = warningThreshold.toIntOrNull()
+    val low = lowThreshold.toIntOrNull()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -978,31 +1004,60 @@ fun SettingsDialog(
                 modifier = Modifier.verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Serveur (facultatif)", fontWeight = FontWeight.Bold)
+                Text("Seuils de stock", fontWeight = FontWeight.Bold)
                 OutlinedTextField(
-                    value = url,
-                    onValueChange = { url = it },
-                    label = { Text("Adresse du serveur") },
-                    placeholder = { Text("http://192.168.1.50:8765") },
+                    value = warningThreshold,
+                    onValueChange = { warningThreshold = it.filter(Char::isDigit) },
+                    label = { Text("Seuil orange (à surveiller)") },
                     singleLine = true,
                 )
                 OutlinedTextField(
-                    value = token,
-                    onValueChange = { token = it },
-                    label = { Text("Code secret (si défini)") },
+                    value = lowThreshold,
+                    onValueChange = { lowThreshold = it.filter(Char::isDigit) },
+                    label = { Text("Seuil rouge (stock bas)") },
                     singleLine = true,
                 )
-                if (syncStatus.isNotEmpty()) {
+                Text(
+                    "Ces seuils s’appliquent à toutes les nourritures suivies.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("Serveur facultatif", fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(if (serverEnabled) "Synchronisation activée" else "Utiliser l’application hors ligne")
+                    Switch(checked = serverEnabled, onCheckedChange = { serverEnabled = it })
+                }
+                if (serverEnabled) {
+                    OutlinedTextField(
+                        value = url,
+                        onValueChange = { url = it },
+                        label = { Text("Adresse du serveur") },
+                        placeholder = { Text("http://192.168.1.50:8765") },
+                        singleLine = true,
+                    )
+                    OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it },
+                        label = { Text("Code secret (si défini)") },
+                        singleLine = true,
+                    )
+                    TextButton(onClick = {
+                        Prefs.saveServer(ctx, url, token, serverEnabled)
+                        thread { Sync.run(ctx) }
+                    }) { Text("Tester la synchronisation") }
+                }
+                if (serverEnabled && syncStatus.isNotEmpty()) {
                     Text(
                         syncStatus,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                TextButton(onClick = {
-                    Prefs.saveServer(ctx, url, token)
-                    thread { Sync.run(ctx) }
-                }) { Text("Tester la synchronisation") }
+                Text("Tests", fontWeight = FontWeight.Bold)
                 TextButton(onClick = { Notifier.showTest(ctx) }) { Text("Envoyer une notification de test") }
                 Text("Mises à jour de l’application", fontWeight = FontWeight.Bold)
                 if (updateMessage.isNotBlank()) {
@@ -1013,7 +1068,35 @@ fun SettingsDialog(
                 }
             }
         },
-        confirmButton = { Button(onClick = { onSave(url, token) }) { Text("Enregistrer") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Fermer") } },
+        confirmButton = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "v$appVersion",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onDismiss) { Text("Fermer") }
+                Button(
+                    enabled = warning != null && low != null && low <= warning,
+                    onClick = {
+                        onSave(
+                            url,
+                            token,
+                            serverEnabled,
+                            StockSettings(
+                                warningThreshold = warning ?: stockSettings.warningThreshold,
+                                lowThreshold = low ?: stockSettings.lowThreshold,
+                                updatedAt = System.currentTimeMillis(),
+                            ),
+                        )
+                    },
+                ) { Text("Enregistrer") }
+            }
+        },
+        dismissButton = {},
     )
 }

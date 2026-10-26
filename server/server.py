@@ -36,6 +36,32 @@ def load_state():
     try:
         with open(DATA, "r", encoding="utf-8") as f:
             s = json.load(f)
+        settings = s.get("stockSettings")
+        if not isinstance(settings, dict):
+            settings = {}
+            for product in s.get("products", []):
+                if not isinstance(product, dict) or not (
+                    "stockWarningThreshold" in product or "stockLowThreshold" in product
+                ):
+                    continue
+                settings = {
+                    "warningThreshold": product.get("stockWarningThreshold", 5),
+                    "lowThreshold": product.get("stockLowThreshold", 2),
+                    "updatedAt": 0,
+                }
+                break
+        warning = settings.get("warningThreshold", 5)
+        low = settings.get("lowThreshold", 2)
+        if (isinstance(warning, bool) or not isinstance(warning, int) or warning < 0 or
+                isinstance(low, bool) or not isinstance(low, int) or low < 0 or low > warning):
+            settings = {"warningThreshold": 5, "lowThreshold": 2, "updatedAt": 0}
+        else:
+            updated_at = settings.get("updatedAt", 0)
+            settings = {
+                "warningThreshold": warning,
+                "lowThreshold": low,
+                "updatedAt": updated_at if isinstance(updated_at, (int, float)) and not isinstance(updated_at, bool) else 0,
+            }
         return {
             "plans": list(s.get("plans", [])),
             "entries": list(s.get("entries", [])),
@@ -44,11 +70,13 @@ def load_state():
             "foodTypes": list(s.get("foodTypes", [])),
             "foodPatterns": list(s.get("foodPatterns", [])),
             "kibblePackages": list(s.get("kibblePackages", [])),
+            "stockSettings": settings,
         }
     except (FileNotFoundError, ValueError):
         return {
             "plans": [], "entries": [], "cats": [], "products": [],
             "foodTypes": [], "foodPatterns": [], "kibblePackages": [],
+            "stockSettings": {"warningThreshold": 5, "lowThreshold": 2, "updatedAt": 0},
         }
 
 
@@ -158,10 +186,21 @@ class Handler(BaseHTTPRequestHandler):
             food_types_in = incoming.get("foodTypes", [])
             food_patterns_in = incoming.get("foodPatterns", [])
             kibble_packages_in = incoming.get("kibblePackages", [])
+            stock_settings_in = incoming.get("stockSettings")
             if not all(isinstance(items, list) for items in (
                 plans_in, entries_in, cats_in, products_in, food_types_in, food_patterns_in, kibble_packages_in
             )):
                 raise ValueError("sync data fields must be lists")
+            if stock_settings_in is not None:
+                if not isinstance(stock_settings_in, dict):
+                    raise ValueError("stockSettings must be an object")
+                warning = stock_settings_in.get("warningThreshold")
+                low = stock_settings_in.get("lowThreshold")
+                updated_at = stock_settings_in.get("updatedAt")
+                if (isinstance(warning, bool) or not isinstance(warning, int) or warning < 0 or
+                        isinstance(low, bool) or not isinstance(low, int) or low < 0 or low > warning or
+                        isinstance(updated_at, bool) or not isinstance(updated_at, (int, float))):
+                    raise ValueError("invalid stockSettings")
         except (ValueError, AttributeError):
             return self._send(400, {"error": "bad json"})
 
@@ -174,6 +213,9 @@ class Handler(BaseHTTPRequestHandler):
             state["foodTypes"] = merge_lists(state.get("foodTypes", []), food_types_in)
             state["foodPatterns"] = merge_lists(state.get("foodPatterns", []), food_patterns_in)
             state["kibblePackages"] = merge_lists(state.get("kibblePackages", []), kibble_packages_in)
+            current_settings = state["stockSettings"]
+            if stock_settings_in is not None and stock_settings_in["updatedAt"] > current_settings["updatedAt"]:
+                state["stockSettings"] = stock_settings_in
             save_state(state)
             self._send(200, state)
 

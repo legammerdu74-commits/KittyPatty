@@ -10,12 +10,12 @@
   :root {
     --bg: #fff8f4; --card: #f1e0d5; --over: #ffdcc4; --text: #211a15; --muted: #6b5a50;
     --primary: #9a4e12; --onprimary: #fff; --line: #dcc6b8; --poulet: #e0a030; --boeuf: #b4523a;
-    --err: #ffdad4; --surface: #fffdfb; --shadow: 0 12px 32px rgba(67, 42, 25, .08);
+    --err: #ffdad4; --stock-low: #b71c1c; --surface: #fffdfb; --shadow: 0 12px 32px rgba(67, 42, 25, .08);
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #1a120c; --card: #3d2f26; --over: #743809; --text: #efe0d7; --muted: #c9b5aa;
-      --primary: #ffb787; --onprimary: #512400; --line: #52443c; --err: #93000a;
+      --primary: #ffb787; --onprimary: #512400; --line: #52443c; --err: #93000a; --stock-low: #ff5252;
       --surface: #261a13; --shadow: 0 12px 32px rgba(0, 0, 0, .18);
     }
   }
@@ -64,6 +64,15 @@
   .card { background: var(--surface); border: 1px solid var(--line); border-radius: 15px; padding: 12px 14px; margin: 0;
           box-shadow: var(--shadow); }
   .card.over { background: var(--over); }
+  .stock-row { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+  .stock-indicator { display: inline-flex; align-items: center; gap: 6px; font-size: .85rem; font-weight: 700; }
+  .stock-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 auto; }
+  .stock-good { color: #438a55; }
+  .stock-warning { color: #d67a12; }
+  .stock-low { color: var(--stock-low); }
+  .stock-change { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+                  padding: 0; font-size: 1.1rem; }
+  .stock-change:disabled { opacity: .45; cursor: not-allowed; }
   .title { font-weight: 700; }
   .card > .title { margin-bottom: 5px; }
   .card > .row { margin-top: 4px; }
@@ -245,7 +254,10 @@
     </div>
     <section id="foodCategoryFoods">
       <div class="panel-heading"><div><h3>Nourriture</h3><p>Nom, marque, prix et poids d’un sachet ou d’une portion.</p></div>
-        <button id="addProduct">+ Ajouter une nourriture</button></div>
+        <div class="actions">
+          <button class="ghost" id="editStockSettings">⚙ Seuils de stock</button>
+          <button id="addProduct">+ Ajouter une nourriture</button>
+        </div></div>
       <div class="card-grid" id="products"></div>
     </section>
     <section id="foodCategoryPatterns" hidden>
@@ -278,11 +290,27 @@
     <label for="productBrand">Marque</label><input id="productBrand" required maxlength="80" placeholder="ex. Marque">
     <label for="productPrice">Prix du sachet / portion (€)</label><input id="productPrice" required inputmode="decimal" placeholder="ex. 1,49">
     <label for="productWeight">Poids du sachet / portion (g)</label><input id="productWeight" inputmode="decimal" placeholder="ex. 85">
+    <label for="productStock">Stock disponible (sachets / portions)</label><input id="productStock" type="number" inputmode="numeric" min="0" max="2147483647" step="1" placeholder="Laisser vide pour ne pas suivre">
     <div class="actions">
       <button type="submit">Enregistrer</button>
       <button type="button" class="ghost" id="cancelProduct">Annuler</button>
     </div>
     <p class="muted" id="productError"></p>
+  </form>
+</dialog>
+<dialog id="stockSettingsDialog">
+  <form id="stockSettingsForm">
+    <h2>Seuils de stock</h2>
+    <p class="muted">Ces seuils s’appliquent à toutes les nourritures suivies.</p>
+    <label for="stockSettingsWarning">Seuil orange (à surveiller)</label>
+    <input id="stockSettingsWarning" type="number" min="0" max="2147483647" step="1" required>
+    <label for="stockSettingsLow">Seuil rouge (stock bas)</label>
+    <input id="stockSettingsLow" type="number" min="0" max="2147483647" step="1" required>
+    <div class="actions">
+      <button type="submit">Enregistrer</button>
+      <button type="button" class="ghost" id="cancelStockSettings">Annuler</button>
+    </div>
+    <p class="muted" id="stockSettingsError"></p>
   </form>
 </dialog>
 <dialog id="patternDialog">
@@ -308,7 +336,11 @@
 const PATES = { poulet: "Poulet", boeuf: "Bœuf" };
 const COLORS = { poulet: "var(--poulet)", boeuf: "var(--boeuf)" };
 const FOOD_ICONS = { poulet: "🍗", boeuf: "🥩", sachet: "🥫" };
-let state = { plans: [], entries: [], cats: [], products: [], foodTypes: [], foodPatterns: [], kibblePackages: [] };
+let state = {
+  plans: [], entries: [], cats: [], products: [], foodTypes: [], foodPatterns: [], kibblePackages: [],
+  stockSettings: { warningThreshold: 5, lowThreshold: 2, updatedAt: 0 },
+};
+const pendingStockUpdates = new Set();
 let openForm = null;      // id du repas dont le formulaire est ouvert
 let formDraft = null;     // valeurs saisies, conservées pendant les rafraîchissements
 let activeTab = "meals";
@@ -699,15 +731,68 @@ function formFor(e) {
       el("button", { class: "ghost", onclick: () => { openForm = null; formDraft = null; render(); } }, "Annuler")));
 }
 
-async function push(entry) {
-  entry.updatedAt = Date.now();
-  state = await api("/api/sync", { plans: [], entries: [entry], cats: [] });
+async function push(entry, products = []) {
+  const updatedAt = Date.now();
+  entry.updatedAt = updatedAt;
+  products.forEach((product) => { product.updatedAt = updatedAt; });
+  state = await api("/api/sync", { plans: [], entries: [entry], cats: [], products });
   openForm = null; formDraft = null;
   render();
 }
+
+function stockUnits(quantity, product) {
+  const match = /^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ÿ]*)/.exec(quantity || "");
+  if (!match) return 1;
+  const amount = Number(match[1].replace(",", "."));
+  if (!Number.isFinite(amount) || amount <= 0) return 0;
+  const unit = match[2].toLocaleLowerCase("fr-BE");
+  const weight = Number(String(product.weight || "").replace(",", "."));
+  const grams = unit.startsWith("g") || (!unit && Number.isFinite(weight) && amount === weight);
+  const count = grams
+    ? (Number.isFinite(weight) && weight > 0 ? Math.ceil(amount / weight) : 1)
+    : Math.ceil(amount);
+  return Math.min(2147483647, count);
+}
+
+function adjustProductStock(products, productId, delta) {
+  return products.map((product) => {
+    if (product.id !== productId || product.stockCount == null) return product;
+    return { ...product, stockCount: Math.min(2147483647, Math.max(0, Number(product.stockCount) + delta)) };
+  });
+}
+
+function restoreEntryStock(entry) {
+  if (!entry.stockDeductedProductId || !(Number(entry.stockDeductedCount) > 0)) return [];
+  const product = state.products.find((item) => item.id === entry.stockDeductedProductId);
+  return product ? [adjustProductStock([product], product.id, Number(entry.stockDeductedCount))[0]] : [];
+}
+
 function saveDone(e, d) {
   const when = d.when ? new Date(d.when).getTime() : Date.now();
   const selectedType = activeFoodTypes().find((type) => type.id === d.foodTypeId);
+  let products = [];
+  let stockDeductedProductId = e.stockDeductedProductId || "";
+  let stockDeductedCount = Number(e.stockDeductedCount) || 0;
+  if (e.status !== "done" || stockDeductedProductId) {
+    const productId = d.productId || e.productId;
+    const product = state.products.find((item) => item.id === productId && !item.deleted) ||
+      state.products.find((item) => !item.deleted &&
+        (item.id === d.foodTypeId || item.kind === d.foodTypeId || item.id === d.pate || item.kind === d.pate));
+    if (stockDeductedProductId && stockDeductedCount > 0) {
+      const oldProduct = state.products.find((item) => item.id === stockDeductedProductId);
+      if (oldProduct) {
+        const restored = adjustProductStock([oldProduct], oldProduct.id, stockDeductedCount)[0];
+        products.push(restored);
+      }
+    }
+    stockDeductedProductId = product?.id || "";
+    stockDeductedCount = product?.stockCount != null ? stockUnits(d.qty.trim() || e.qty, product) : 0;
+    if (product && stockDeductedCount > 0) {
+      const base = products.find((item) => item.id === product.id) || product;
+      const updated = adjustProductStock([base], product.id, -stockDeductedCount)[0];
+      products = products.filter((item) => item.id !== product.id).concat(updated);
+    }
+  }
   return push({
     ...e,
     status: "done",
@@ -722,10 +807,16 @@ function saveDone(e, d) {
     givenFoodTypeId: d.foodTypeId,
     givenFoodTypeName: selectedType?.name || productFor({ productId: d.productId })?.name || "",
     givenFoodTypeEmoji: selectedType?.emoji || foodIcon({ productId: d.productId, pate: d.pate }),
-  });
+    stockDeductedProductId,
+    stockDeductedCount,
+  }, products);
 }
 function saveSkip(e) {
-  return push({ ...e, status: "skipped", deleted: false, permanentlyDeleted: false, givenPate: "", givenQty: "", doneAt: Date.now() });
+  return push({
+    ...e,
+    status: "skipped", deleted: false, permanentlyDeleted: false, givenPate: "", givenQty: "",
+    doneAt: Date.now(), stockDeductedProductId: "", stockDeductedCount: 0,
+  }, restoreEntryStock(e));
 }
 function deleteEntry(e) {
   if (e.deleted) return permanentlyDeleteEntry(e);
@@ -751,7 +842,9 @@ function deleteEntry(e) {
     givenFoodTypeId: "",
     givenFoodTypeName: "",
     givenFoodTypeEmoji: "",
-  });
+    stockDeductedProductId: "",
+    stockDeductedCount: 0,
+  }, restoreEntryStock(e));
 }
 
 function permanentlyDeleteEntry(e) {
@@ -771,7 +864,9 @@ function permanentlyDeleteEntry(e) {
     givenFoodTypeName: "",
     givenFoodTypeEmoji: "",
     catIds: [],
-  });
+    stockDeductedProductId: "",
+    stockDeductedCount: 0,
+  }, restoreEntryStock(e));
 }
 
 function entryCard(e, over) {
@@ -845,6 +940,38 @@ function render() {
       priceLabel(product),
       product.weight ? product.weight + " g" : "",
     ].filter(Boolean).join(" · ") || "Nourriture de base"),
+    product.stockCount == null
+      ? el("div", { class: "stock-row muted" }, "Stock non suivi")
+      : (() => {
+        const stock = Math.min(2147483647, Math.max(0, Number(product.stockCount) || 0));
+        const lowThreshold = Math.max(0, Number(state.stockSettings?.lowThreshold ?? 2) || 0);
+        const warningThreshold = Math.max(lowThreshold, Number(state.stockSettings?.warningThreshold ?? 5) || 0);
+        const status = stock <= lowThreshold ? ["stock-low", "Stock bas", "var(--stock-low)"]
+          : stock <= warningThreshold ? ["stock-warning", "À surveiller", "#d67a12"]
+            : ["stock-good", "Stock bon", "#438a55"];
+        const decrementButton = el("button", {
+            class: "stock-change",
+            type: "button",
+            title: "Retirer un sachet du stock",
+            "aria-label": "Retirer un sachet de " + product.name,
+            onclick: () => changeProductStock(product, -1),
+          }, "−");
+        decrementButton.disabled = stock <= 0 || pendingStockUpdates.has(product.id);
+        const incrementButton = el("button", {
+            class: "stock-change",
+            type: "button",
+            title: "Ajouter un sachet au stock",
+            "aria-label": "Ajouter un sachet à " + product.name,
+            onclick: () => changeProductStock(product, 1),
+          }, "+");
+        incrementButton.disabled = stock >= 2147483647 || pendingStockUpdates.has(product.id);
+        return el("div", { class: "stock-row" },
+          el("span", { class: "stock-indicator " + status[0] },
+            el("i", { class: "stock-dot", style: "background:" + status[2] }),
+            stock + (stock === 1 ? " sachet · " : " sachets · ") + status[1]),
+          decrementButton,
+          incrementButton);
+      })(),
     el("div", { class: "actions" },
       el("button", { class: "ghost", onclick: () => openProductDialog(product) }, "Modifier"),
       product.id === "poulet" || product.id === "boeuf" ? "" :
@@ -1084,8 +1211,55 @@ function openProductDialog(product = null) {
   $("productBrand").value = product?.brand || "";
   $("productPrice").value = product?.packPrice || "";
   $("productWeight").value = product?.weight || "";
+  $("productStock").value = product?.stockCount ?? "";
   $("productError").textContent = "";
   $("productDialog").showModal();
+}
+
+function openStockSettingsDialog() {
+  const settings = state.stockSettings || { warningThreshold: 5, lowThreshold: 2 };
+  $("stockSettingsWarning").value = settings.warningThreshold;
+  $("stockSettingsLow").value = settings.lowThreshold;
+  $("stockSettingsError").textContent = "";
+  $("stockSettingsDialog").showModal();
+}
+
+async function saveStockSettings(event) {
+  event.preventDefault();
+  const warningThreshold = Number($("stockSettingsWarning").value);
+  const lowThreshold = Number($("stockSettingsLow").value);
+  if (!Number.isInteger(warningThreshold) || warningThreshold < 0 || warningThreshold > 2147483647 ||
+      !Number.isInteger(lowThreshold) || lowThreshold < 0 || lowThreshold > warningThreshold) {
+    $("stockSettingsError").textContent = "Les seuils doivent être des entiers valides, avec le rouge inférieur ou égal à l’orange.";
+    return;
+  }
+  try {
+    state = await api("/api/sync", {
+      plans: [], entries: [], cats: [], stockSettings: {
+        warningThreshold, lowThreshold, updatedAt: Math.max(Date.now(), Number(state.stockSettings?.updatedAt || 0) + 1),
+      },
+    });
+    $("stockSettingsDialog").close();
+    render();
+  } catch (err) {
+    $("stockSettingsError").textContent = "Impossible d'enregistrer : " + err.message;
+  }
+}
+
+async function changeProductStock(product, delta) {
+  if (pendingStockUpdates.has(product.id)) return;
+  pendingStockUpdates.add(product.id);
+  const current = Math.max(0, Number(product.stockCount) || 0);
+  const updated = { ...product, stockCount: Math.max(0, current + delta), updatedAt: Date.now() };
+  try {
+    state = await api("/api/sync", { plans: [], entries: [], cats: [], products: [updated] });
+  } catch (err) {
+    $("banner").textContent = "Impossible de mettre à jour le stock : " + err.message;
+    $("banner").style.display = "block";
+  } finally {
+    pendingStockUpdates.delete(product.id);
+    render();
+  }
 }
 
 function renderPatterns() {
@@ -1190,6 +1364,8 @@ async function saveProduct(event) {
   const brand = $("productBrand").value.trim();
   const price = $("productPrice").value.trim().replace(",", ".");
   const weight = $("productWeight").value.trim().replace(",", ".");
+  const stockText = $("productStock").value.trim();
+  const stockCount = stockText === "" ? null : Number(stockText);
   const existingProduct = activeProducts().find((item) => item.id === editingProductId);
   if (!name || !brand || !Number.isFinite(Number(price)) || Number(price) < 0) {
     $("productError").textContent = "Indique un nom, une marque et un prix valide.";
@@ -1199,6 +1375,10 @@ async function saveProduct(event) {
     $("productError").textContent = "Indique un poids positif ou laisse le champ vide.";
     return;
   }
+  if (stockCount !== null && (!Number.isInteger(stockCount) || stockCount < 0 || stockCount > 2147483647)) {
+    $("productError").textContent = "Indique un stock entier positif ou laisse le champ vide.";
+    return;
+  }
   const product = {
     id: editingProductId || ("product_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8)),
     name,
@@ -1206,6 +1386,7 @@ async function saveProduct(event) {
     brand,
     packPrice: price,
     weight,
+    stockCount,
     deleted: false,
     updatedAt: Date.now(),
   };
@@ -1243,6 +1424,7 @@ async function deleteProduct(product) {
 async function refresh() {
   try {
     state = await api("/api/state");
+    state.stockSettings = state.stockSettings || { warningThreshold: 5, lowThreshold: 2, updatedAt: 0 };
     $("status").textContent = "Mis à jour à " + new Date().toLocaleTimeString("fr-BE", { hour: "2-digit", minute: "2-digit" });
     $("banner").style.display = "none";
     if (!openForm) render();
@@ -1265,6 +1447,9 @@ $("chatFutureDays").addEventListener("change", (event) => {
   renderChats();
 });
 $("addProduct").addEventListener("click", () => openProductDialog());
+$("editStockSettings").addEventListener("click", openStockSettingsDialog);
+$("cancelStockSettings").addEventListener("click", () => $("stockSettingsDialog").close());
+$("stockSettingsForm").addEventListener("submit", saveStockSettings);
 $("cancelProduct").addEventListener("click", () => $("productDialog").close());
 $("productForm").addEventListener("submit", saveProduct);
 $("addPattern").addEventListener("click", () => openPatternDialog());

@@ -11,6 +11,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -99,6 +100,7 @@ fun App(openEntry: MutableState<String?>) {
     val state by Store.state.collectAsState()
     val syncStatus by Sync.status.collectAsState()
     val updateStatus by AppUpdater.state.collectAsState()
+    var serverEnabled by remember { mutableStateOf(Prefs.serverEnabled(ctx)) }
     val cats = state.cats.filter { !it.deleted }
 
     var tab by remember { mutableIntStateOf(0) }
@@ -140,6 +142,7 @@ fun App(openEntry: MutableState<String?>) {
     Scaffold(
         topBar = {
             AppHeader(
+                serverEnabled = serverEnabled,
                 syncStatus = syncStatus,
                 onSync = { thread { Sync.run(ctx) } },
                 onSettings = { showSettings = true },
@@ -217,6 +220,7 @@ fun App(openEntry: MutableState<String?>) {
                 foodPatterns = state.foodPatterns.filter { !it.deleted },
                 kibblePackages = state.kibblePackages.filterNot { it.deleted },
                 cats = cats,
+                stockSettings = state.stockSettings,
                 modifier = mod,
                 onSaveProduct = {
                     Store.upsertProduct(it)
@@ -362,9 +366,13 @@ fun App(openEntry: MutableState<String?>) {
             syncStatus = syncStatus,
             updateMessage = updateStatus.message,
             checkingUpdates = updateStatus.checking,
+            serverEnabled = serverEnabled,
+            stockSettings = state.stockSettings,
             onCheckUpdates = { AppUpdater.check(ctx) },
-            onSave = { url, token ->
-                Prefs.saveServer(ctx, url, token)
+            onSave = { url, token, enabled, stockSettings ->
+                serverEnabled = enabled
+                Prefs.saveServer(ctx, url, token, enabled)
+                Store.upsertStockSettings(stockSettings)
                 Planner.afterChange(ctx)
                 showSettings = false
             },
@@ -413,7 +421,7 @@ fun App(openEntry: MutableState<String?>) {
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
+fun AppHeader(serverEnabled: Boolean, syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
     val c = MaterialTheme.colorScheme
     Box(
         Modifier
@@ -447,7 +455,7 @@ fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
                     fontWeight = FontWeight.Bold,
                     color = c.onPrimaryContainer,
                 )
-                if (syncStatus.isNotEmpty()) {
+                if (serverEnabled && syncStatus.isNotEmpty()) {
                     Text(
                         syncStatus,
                         style = MaterialTheme.typography.bodySmall,
@@ -455,8 +463,10 @@ fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
                     )
                 }
             }
-            IconButton(onClick = onSync) {
-                Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = "Synchroniser", tint = c.onPrimaryContainer)
+            if (serverEnabled) {
+                IconButton(onClick = onSync) {
+                    Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = "Synchroniser", tint = c.onPrimaryContainer)
+                }
             }
             IconButton(onClick = onSettings) {
                 Icon(painterResource(R.drawable.ic_action_settings), contentDescription = "Réglages", tint = c.onPrimaryContainer)
@@ -1214,6 +1224,7 @@ private fun FoodManagementScreen(
     foodPatterns: List<FoodPattern>,
     kibblePackages: List<KibblePackage>,
     cats: List<Cat>,
+    stockSettings: StockSettings,
     modifier: Modifier,
     onSaveProduct: (FoodProduct) -> Unit,
     onDeleteProduct: (String) -> Unit,
@@ -1299,10 +1310,15 @@ private fun FoodManagementScreen(
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Row(
-                            Modifier.padding(14.dp),
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Column(Modifier.weight(1f)) {
+                            Column(
+                                Modifier.weight(1f),
+                                verticalArrangement = Arrangement.spacedBy(2.dp),
+                            ) {
                                 Text("${pateEmoji(product.pateKey)} ${product.name}", fontWeight = FontWeight.Bold)
                                 Text(
                                     listOfNotNull(
@@ -1313,11 +1329,61 @@ private fun FoodManagementScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
+                                val stock = product.stockCount
+                                if (stock == null) {
+                                    Text(
+                                        "Stock non suivi",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                } else {
+                                    val darkTheme = isSystemInDarkTheme()
+                                    val stockColor = when {
+                                        stock <= stockSettings.lowThreshold ->
+                                            if (darkTheme) Color(0xFFFF5252) else Color(0xFFB71C1C)
+                                        stock <= stockSettings.warningThreshold -> Color(0xFFE58A24)
+                                        else -> Color(0xFF438A55)
+                                    }
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Box(
+                                            Modifier
+                                                .size(10.dp)
+                                                .background(stockColor, CircleShape),
+                                        )
+                                        Text(
+                                            "$stock " + (if (stock == 1) "sachet" else "sachets") + " · " + when {
+                                                stock <= stockSettings.lowThreshold -> "stock bas"
+                                                stock <= stockSettings.warningThreshold -> "à surveiller"
+                                                else -> "stock bon"
+                                            },
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = stockColor,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        TextButton(
+                                            onClick = { onSaveProduct(product.copy(stockCount = (stock - 1).coerceAtLeast(0))) },
+                                            enabled = stock > 0,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                        ) { Text("−", fontSize = 20.sp) }
+                                        TextButton(
+                                            onClick = { onSaveProduct(product.copy(stockCount = stock + 1)) },
+                                            enabled = stock < Int.MAX_VALUE,
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                        ) { Text("+", fontSize = 20.sp) }
+                                    }
+                                }
                             }
-                            TextButton(onClick = {
-                                editingProductId = product.id
-                                showProductEditor = true
-                            }) { Text("Modifier") }
+                            TextButton(
+                                onClick = {
+                                    editingProductId = product.id
+                                    showProductEditor = true
+                                },
+                            ) { Text("Modifier") }
                         }
                     }
                 }
