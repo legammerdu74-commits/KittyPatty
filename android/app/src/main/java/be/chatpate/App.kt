@@ -394,7 +394,7 @@ fun AppHeader(syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
                     painterResource(R.drawable.ic_logo_mark),
                     contentDescription = null,
                     tint = c.onPrimary,
-                    modifier = Modifier.size(26.dp),
+                    modifier = Modifier.size(34.dp),
                 )
             }
             Spacer(Modifier.width(12.dp))
@@ -1187,6 +1187,10 @@ private fun FoodManagementScreen(
     var showKibbleEditor by remember { mutableStateOf(false) }
     var editingKibbleId by remember { mutableStateOf<String?>(null) }
     var deleteKibbleId by remember { mutableStateOf<String?>(null) }
+
+    BackHandler(enabled = category == 1) {
+        category = 0
+    }
 
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
