@@ -3,7 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Gamelle</title>
+<meta name="theme-color" content="#ffe3c7">
+<link rel="icon" type="image/svg+xml" href="/logo.svg">
+<title>Kitty Patty</title>
 <style>
   :root {
     --bg: #fff8f4; --card: #f1e0d5; --over: #ffdcc4; --text: #211a15; --muted: #6b5a50;
@@ -23,24 +25,36 @@
   header { padding: 18px clamp(20px, 4vw, 64px); display: flex; align-items: center; gap: 14px;
            border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2;
            background: color-mix(in srgb, var(--bg) 90%, transparent); backdrop-filter: blur(16px); }
-  header h1 { margin: 0; font-size: 1.35rem; flex: 1; letter-spacing: -.03em; }
+  header h1 { margin: 0; font-size: 1.35rem; letter-spacing: -.03em; }
   header small { color: var(--muted); }
-  .brand { display: flex; align-items: center; gap: 10px; }
-  .brand-mark { width: 42px; height: 42px; display: grid; place-items: center; border-radius: 15px;
-                background: var(--primary); color: var(--onprimary); font-size: 22px; }
+  .profile-control { display: flex; align-items: center; gap: 8px; }
+  .profile-control label { margin: 0; color: var(--muted); white-space: nowrap; }
+  .profile-control select { width: auto; min-width: 150px; max-width: 220px; }
+  .brand { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+  .brand-mark { width: 42px; height: 42px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 15px;
+                background: #ffe3c7; }
+  .brand-mark img { display: block; width: 36px; height: 36px; }
   main { width: min(100%, 1680px); margin: 0 auto; padding: 28px clamp(20px, 4vw, 64px) 64px; }
   .welcome { display: flex; justify-content: space-between; align-items: end; gap: 24px; margin: 4px 0 24px; }
   .welcome h2 { margin: 0 0 4px; font-size: clamp(1.6rem, 2.4vw, 2.25rem); letter-spacing: -.04em; color: var(--text); text-transform: none; }
   .welcome p { margin: 0; color: var(--muted); }
-  .cat-strip { display: flex; align-items: center; justify-content: end; gap: 8px; flex-wrap: wrap; }
-  .cat-pill { display: flex; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; border: 1px solid var(--line);
-              border-radius: 999px; background: var(--surface); font-size: .9rem; font-weight: 600; }
   .tabs { display: flex; gap: 8px; padding: 7px; margin-bottom: 22px; border: 1px solid var(--line);
           border-radius: 18px; background: var(--surface); box-shadow: var(--shadow); overflow-x: auto; }
   .tab { display: inline-flex; justify-content: center; align-items: center; gap: 9px; min-height: 44px;
          padding: 8px 17px; white-space: nowrap; background: transparent; color: var(--muted); }
   .tab[aria-selected="true"] { background: var(--primary); color: var(--onprimary); }
   .tab-count { min-width: 22px; padding: 1px 6px; border-radius: 999px; background: color-mix(in srgb, currentColor 16%, transparent); font-size: .78rem; }
+  .selected-cat-avatar { display: grid; place-items: center; flex: 0 0 38px; width: 38px; height: 38px;
+                         margin-left: auto; overflow: hidden; border: 2px solid var(--line); border-radius: 50%;
+                         background: var(--primary); color: var(--onprimary); font-weight: 700; }
+  .selected-cat-avatar img { width: 100%; height: 100%; object-fit: cover; }
+  .selected-cat-avatar span { font-size: 1rem; }
+  .meal-switch { display: flex; gap: 6px; width: fit-content; max-width: 100%; padding: 5px; margin: 0 0 18px;
+                 border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+  .meal-switch button { background: transparent; color: var(--muted); padding: 8px 14px; }
+  .meal-switch button[aria-pressed="true"] { background: var(--primary); color: var(--onprimary); }
+  .meal-view { display: none; }
+  .meal-view.active { display: block; }
   .panel { display: none; }
   .panel.active { display: block; }
   .panel-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; margin: 0 0 16px; }
@@ -117,80 +131,107 @@
   .food-category { min-width: 190px; min-height: 54px; border: 1px solid var(--line); background: var(--surface);
                    color: var(--text); font-size: 1rem; font-weight: 700; }
   .food-category.active { background: var(--primary); color: var(--onprimary); border-color: var(--primary); }
-  .chat-browser { display: grid; grid-template-columns: minmax(220px, .35fr) minmax(0, 1fr); gap: 16px; align-items: start; }
-  .chat-list, .chat-detail { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); }
-  .chat-list { display: grid; gap: 8px; }
+  .chat-browser { min-width: 0; }
+  .chat-detail { min-width: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px; box-shadow: var(--shadow); }
   .chat-avatar { width: 36px; height: 36px; font-size: 15px; flex: 0 0 auto; }
   .chat-detail h3 { margin: 0; }
   .chat-detail .chat-color-bar { height: 6px; border-radius: 99px; background: var(--chat-accent, var(--primary)); margin: 10px 0 18px; }
-  @media (max-width: 700px) { .chat-browser { grid-template-columns: 1fr; } }
+  .chat-meals-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+  .chat-meals-section { min-width: 0; }
+  .chat-meal-list { display: grid; grid-template-columns: 1fr; gap: 10px; max-height: 680px; overflow: auto; padding: 2px; }
+  .chat-meals-section .panel-heading { align-items: start; }
+  .chat-meals-section .panel-heading p { max-width: 34ch; }
+  .chat-range { display: flex; align-items: center; justify-content: end; gap: 10px; margin: 0 0 14px; }
+  .chat-range label { margin: 0; color: var(--muted); }
+  .chat-range select { width: auto; min-width: 150px; }
   @media (max-width: 900px) {
     .calendar-layout { grid-template-columns: 1fr; }
+    .chat-meals-grid { grid-template-columns: 1fr; }
   }
   @media (max-width: 700px) {
+    header { gap: 6px; }
+    .brand { gap: 7px; }
+    .brand h1 { font-size: 1.05rem; }
+    .brand-mark { width: 36px; height: 36px; border-radius: 12px; }
+    .brand-mark img { width: 31px; height: 31px; }
+    .profile-control { gap: 4px; }
+    .profile-control label { display: none; }
+    .profile-control select { min-width: 0; max-width: 96px; padding: 7px 6px; font-size: .85rem; }
     header { padding: 12px 16px; }
     header small { display: none; }
     main { padding: 22px 16px 48px; }
     .welcome { align-items: start; flex-direction: column; }
-    .cat-strip { justify-content: start; }
     .tabs { margin-left: -4px; margin-right: -4px; }
-    .tab { flex: 1; padding: 8px 12px; }
+    .tab { flex: 1; padding: 8px 10px; font-size: .9rem; }
     .card-grid { grid-template-columns: 1fr; }
     .calendar-day { min-height: 48px; padding: 4px; }
+    .meal-switch { width: 100%; }
+    .meal-switch button { flex: 1; padding-inline: 8px; }
+    .panel-heading { align-items: start; }
+    .panel-heading > button { flex: 0 0 auto; }
   }
 </style>
 </head>
 <body>
 <header>
-  <div class="brand"><div class="brand-mark">🐾</div><h1>Gamelle</h1></div>
+  <div class="brand"><div class="brand-mark"><img src="/logo.svg" alt=""></div><h1>Kitty Patty</h1></div>
   <small id="status"></small>
   <button class="ghost" id="refresh" title="Actualiser">↻</button>
+  <div class="profile-control">
+    <label for="chatList">Profil</label>
+    <select id="chatList" aria-label="Sélectionner un profil de chat"></select>
+  </div>
 </header>
 <main>
   <div id="banner"></div>
   <div class="welcome">
-    <div><h2>Le petit coin des chats</h2><p>Les repas, les habitudes et les moments à garder en mémoire.</p></div>
-    <div class="cat-strip" id="catStrip"></div>
+    <div><h2>Bonjour, les moustaches !</h2><p>Repas du jour, planning et petits suivis au même endroit.</p></div>
   </div>
   <nav class="tabs" role="tablist" aria-label="Sections">
-    <button class="tab" id="tab-overdue" role="tab" aria-selected="true" aria-controls="panel-overdue">À encoder <span class="tab-count" id="count-overdue">0</span></button>
-    <button class="tab" id="tab-upcoming" role="tab" aria-selected="false" aria-controls="panel-upcoming">Prochains repas</button>
+    <button class="tab" id="tab-meals" role="tab" aria-selected="true" aria-controls="panel-meals">Repas</button>
     <button class="tab" id="tab-plans" role="tab" aria-selected="false" aria-controls="panel-plans">Programmes</button>
     <button class="tab" id="tab-food" role="tab" aria-selected="false" aria-controls="panel-food">Alimentation</button>
     <button class="tab" id="tab-cats" role="tab" aria-selected="false" aria-controls="panel-cats">Chats</button>
+    <div class="selected-cat-avatar" id="selectedCatAvatar" role="img" aria-label="Aucun chat sélectionné" title="Aucun chat sélectionné"></div>
   </nav>
-  <section class="panel active" id="panel-overdue" role="tabpanel" aria-labelledby="tab-overdue">
-    <div class="panel-heading"><div><h2>À encoder</h2><p>Les repas passés qui attendent encore une mise à jour.</p></div></div>
-    <div class="card-grid" id="overdue"></div>
-  </section>
-  <section class="panel" id="panel-upcoming" role="tabpanel" aria-labelledby="tab-upcoming">
-    <div class="panel-heading"><div><h2>Prochains repas</h2><p>Jusqu’aux prochains repas prévus pour tes chats.</p></div></div>
-    <div class="calendar-layout">
-      <div class="calendar-card">
-        <div class="calendar-top">
-          <button class="ghost" id="calendarPrev" aria-label="Mois précédent">‹</button>
-          <strong id="calendarMonth"></strong>
-          <button class="ghost" id="calendarNext" aria-label="Mois suivant">›</button>
-          <button class="ghost" id="calendarToday">Aujourd’hui</button>
-        </div>
-        <label for="calendarCatFilter">Afficher les repas de</label>
-        <select class="calendar-filter" id="calendarCatFilter"><option value="">Tous les chats</option></select>
-        <div class="calendar-week"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
-        <div class="calendar-days" id="calendarDays"></div>
-        <div class="calendar-legend">
-          <span><i class="calendar-dot" style="background:#5e8b5a"></i>Donné</span>
-          <span><i class="calendar-dot" style="background:var(--err)"></i>À encoder</span>
-          <span><i class="calendar-dot" style="background:var(--primary)"></i>À prévoir</span>
-        </div>
-        <div class="calendar-stats" id="calendarStats"></div>
-      </div>
-      <aside class="day-card">
-        <h3 id="selectedDate"></h3>
-        <div class="day-meals" id="selectedMeals"></div>
-      </aside>
+  <section class="panel active" id="panel-meals" role="tabpanel" aria-labelledby="tab-meals">
+    <div class="meal-switch" role="group" aria-label="Vue des repas">
+      <button id="mealViewButton-overdue" aria-pressed="true">À encoder <span class="tab-count" id="count-overdue">0</span></button>
+      <button id="mealViewButton-calendar" aria-pressed="false">Calendrier &amp; à venir</button>
     </div>
-    <div class="panel-heading" style="margin-top:24px"><div><h2>À venir</h2><p>Les prochains repas programmés.</p></div></div>
-    <div class="card-grid" id="upcoming"></div>
+    <section class="meal-view active" id="mealView-overdue">
+      <div class="panel-heading"><div><h2>À encoder</h2><p>Les repas passés qui attendent encore une mise à jour.</p></div></div>
+      <div class="card-grid" id="overdue"></div>
+    </section>
+    <section class="meal-view" id="mealView-calendar">
+      <div class="panel-heading"><div><h2>Calendrier des repas</h2><p>Parcours les repas passés et à venir de tes chats.</p></div></div>
+      <div class="calendar-layout">
+        <div class="calendar-card">
+          <div class="calendar-top">
+            <button class="ghost" id="calendarPrev" aria-label="Mois précédent">‹</button>
+            <strong id="calendarMonth"></strong>
+            <button class="ghost" id="calendarNext" aria-label="Mois suivant">›</button>
+            <button class="ghost" id="calendarToday">Aujourd’hui</button>
+          </div>
+          <label for="calendarCatFilter">Chat affiché</label>
+          <select class="calendar-filter" id="calendarCatFilter"><option value="">Tous les chats</option></select>
+          <div class="calendar-week"><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span><span>D</span></div>
+          <div class="calendar-days" id="calendarDays"></div>
+          <div class="calendar-legend">
+            <span><i class="calendar-dot" style="background:#5e8b5a"></i>Donné</span>
+            <span><i class="calendar-dot" style="background:var(--err)"></i>À encoder</span>
+            <span><i class="calendar-dot" style="background:var(--primary)"></i>À venir</span>
+          </div>
+          <div class="calendar-stats" id="calendarStats"></div>
+        </div>
+        <aside class="day-card">
+          <h3 id="selectedDate"></h3>
+          <div class="day-meals" id="selectedMeals"></div>
+        </aside>
+      </div>
+      <div class="panel-heading" style="margin-top:24px"><div><h2>À venir</h2><p>Les prochains repas programmés.</p></div></div>
+      <div class="card-grid" id="upcoming"></div>
+    </section>
   </section>
   <section class="panel" id="panel-plans" role="tabpanel" aria-labelledby="tab-plans">
     <div class="panel-heading"><div><h2>Programmes</h2><p>Les habitudes et fréquences enregistrées dans l’application.</p></div></div>
@@ -215,8 +256,17 @@
   </section>
   <section class="panel" id="panel-cats" role="tabpanel" aria-labelledby="tab-cats">
     <div class="panel-heading"><div><h2>Chats</h2><p>Choisis un profil pour consulter ses statistiques, ses repas et son historique.</p></div></div>
+    <div class="chat-range">
+      <label for="chatFutureDays">Repas à venir</label>
+      <select id="chatFutureDays">
+        <option value="14">2 prochaines semaines</option>
+        <option value="30">30 prochains jours</option>
+        <option value="60">60 prochains jours</option>
+        <option value="90">90 prochains jours</option>
+        <option value="365">1 an</option>
+      </select>
+    </div>
     <div class="chat-browser">
-      <div class="chat-list"><label for="chatList">Profil du chat</label><select id="chatList"></select></div>
       <div class="chat-detail" id="chatDetail"></div>
     </div>
   </section>
@@ -261,7 +311,9 @@ const FOOD_ICONS = { poulet: "🍗", boeuf: "🥩", sachet: "🥫" };
 let state = { plans: [], entries: [], cats: [], products: [], foodTypes: [], foodPatterns: [], kibblePackages: [] };
 let openForm = null;      // id du repas dont le formulaire est ouvert
 let formDraft = null;     // valeurs saisies, conservées pendant les rafraîchissements
-let activeTab = "overdue";
+let activeTab = "meals";
+let activeMealView = "overdue";
+let chatFutureDays = 14;
 let selectedChatId = "";
 let editingProductId = null;
 let editingPatternId = null;
@@ -556,6 +608,16 @@ function selectTab(name) {
   });
 }
 
+function selectMealView(name) {
+  activeMealView = name;
+  document.querySelectorAll(".meal-view").forEach((view) => {
+    view.classList.toggle("active", view.id === "mealView-" + name);
+  });
+  document.querySelectorAll(".meal-switch button").forEach((button) => {
+    button.setAttribute("aria-pressed", String(button.id === "mealViewButton-" + name));
+  });
+}
+
 document.querySelectorAll(".tab").forEach((tab, index, tabs) => {
   tab.addEventListener("click", () => selectTab(tab.id.slice(4)));
   tab.addEventListener("keydown", (event) => {
@@ -566,6 +628,10 @@ document.querySelectorAll(".tab").forEach((tab, index, tabs) => {
     next.focus();
     selectTab(next.id.slice(4));
   });
+});
+
+document.querySelectorAll(".meal-switch button").forEach((button) => {
+  button.addEventListener("click", () => selectMealView(button.id.slice("mealViewButton-".length)));
 });
 
 function toLocalInput(ms) {
@@ -786,27 +852,22 @@ function render() {
     "Aucun produit dans le catalogue.");
   renderPatterns();
   $("count-overdue").textContent = overdue.length;
-  $("catStrip").replaceChildren(...activeCats().map((cat) =>
-    el("div", { class: "cat-pill" },
-      cat.photo
-        ? el("img", { class: "av cat-photo", src: "data:image/jpeg;base64," + cat.photo, alt: "" })
-        : el("span", { class: "av", style: "background:" + catColor(cat) }, (cat.name || "?").slice(0, 1).toUpperCase()),
-      cat.name)));
   renderCalendar();
   renderChats();
 }
 
 function chatMeals(cat) {
   const now = Date.now();
+  const cutoff = now + chatFutureDays * 24 * 60 * 60 * 1000;
   const existing = (state.entries || []).filter((entry) => !entry.deleted && (entry.catIds || []).includes(cat.id));
   const byId = new Map(existing.map((entry) => [entry.id, entry]));
-  const scheduled = existing.filter((entry) => entry.status === "pending" && entry.at > now);
+  const scheduled = existing.filter((entry) => entry.status === "pending" && entry.at > now && entry.at <= cutoff);
   const today = new Date();
   for (const plan of state.plans || []) {
     if (plan.deleted || !plan.active || !(plan.catIds || []).includes(cat.id)) continue;
     const planStart = localDate(plan.start);
     if (!planStart) continue;
-    for (let offset = 0; offset <= 60; offset++) {
+    for (let offset = 0; offset <= chatFutureDays; offset++) {
       const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() + offset);
       const interval = Math.max(1, Number(plan.everyDays) || 1);
       if (date < planStart || dayDiff(planStart, date) % interval !== 0) continue;
@@ -829,7 +890,7 @@ function chatMeals(cat) {
   }
   const history = existing.filter((entry) => entry.status !== "pending")
     .sort((a, b) => (b.doneAt || b.at) - (a.doneAt || a.at));
-  return { scheduled: scheduled.sort((a, b) => a.at - b.at).slice(0, 30), history };
+  return { scheduled: scheduled.sort((a, b) => a.at - b.at), history };
 }
 
 function parseFoodQuantity(value, product) {
@@ -936,6 +997,7 @@ function chatFoodStats(cat) {
 }
 
 function renderChats() {
+  const today = new Date();
   const cats = activeCats();
   if (!cats.some((cat) => cat.id === selectedChatId)) selectedChatId = cats[0]?.id || "";
   const list = $("chatList");
@@ -945,13 +1007,24 @@ function renderChats() {
     option.selected = cat.id === selectedChatId;
     return option;
   }));
+  list.disabled = cats.length === 0;
+  $("chatFutureDays").value = String(chatFutureDays);
   if (!cats.length) {
     list.append(el("option", { value: "" }, "Aucun profil de chat"));
+    $("selectedCatAvatar").replaceChildren();
+    $("selectedCatAvatar").setAttribute("aria-label", "Aucun chat sélectionné");
+    $("selectedCatAvatar").title = "Aucun chat sélectionné";
     detail.replaceChildren(el("div", { class: "empty" }, "Ajoute les profils depuis l’application Android."));
     return;
   }
   const cat = cats.find((item) => item.id === selectedChatId);
   if (!cat) return;
+  const avatar = $("selectedCatAvatar");
+  avatar.replaceChildren(cat.photo
+    ? el("img", { src: "data:image/jpeg;base64," + cat.photo, alt: "" })
+    : el("span", {}, (cat.name || "?").slice(0, 1).toUpperCase()));
+  avatar.setAttribute("aria-label", "Chat sélectionné : " + cat.name);
+  avatar.title = cat.name;
   const accent = catColor(cat);
   detail.style.setProperty("--chat-accent", accent);
   document.documentElement.style.setProperty("--primary", accent);
@@ -986,10 +1059,21 @@ function renderChats() {
         return el("div", {}, time + " · tous les " + plan.interval + " jour(s) · " +
           (plan.quantity || "quantité non indiquée") + " : " + plan.meals + " repas · " + formatCost(plan.amount));
       })),
-    el("div", { class: "panel-heading" }, el("div", {}, el("h2", {}, "Repas prévus"), el("p", {}, "Les prochains repas associés à ce chat."))),
-    el("div", { class: "card-grid" }, ...(scheduled.length ? scheduled.map((meal) => entryCard(meal, false)) : [el("div", { class: "empty" }, "Aucun repas prévu.") ])),
-    el("div", { class: "panel-heading", style: "margin-top:24px" }, el("div", {}, el("h2", {}, "Historique"), el("p", {}, "Les repas déjà enregistrés pour ce chat."))),
-    el("div", { class: "card-grid" }, ...(history.length ? history.map((meal) => entryCard(meal, false)) : [el("div", { class: "empty" }, "Aucun repas dans l’historique.") ])),
+    el("div", { class: "chat-meals-grid" },
+      el("section", { class: "chat-meals-section" },
+        el("div", { class: "panel-heading" }, el("div", {},
+          el("h2", {}, "Repas à venir"),
+          el("p", {}, "Dans les " + (chatFutureDays === 14 ? "2 prochaines semaines" : chatFutureDays + " prochains jours") + "."))),
+        el("div", { class: "chat-meal-list" }, ...(scheduled.length
+          ? scheduled.map((meal) => entryCard(meal, false))
+          : [el("div", { class: "empty" }, "Aucun repas prévu sur cette période.")]))),
+      el("section", { class: "chat-meals-section" },
+        el("div", { class: "panel-heading" }, el("div", {},
+          el("h2", {}, "Historique"),
+          el("p", {}, "Les repas déjà enregistrés pour ce chat."))),
+        el("div", { class: "chat-meal-list" }, ...(history.length
+          ? history.map((meal) => entryCard(meal, false))
+          : [el("div", { class: "empty" }, "Aucun repas dans l’historique.")])))),
   );
 }
 
@@ -1174,6 +1258,10 @@ $("calendarCatFilter").addEventListener("change", (event) => {
 });
 $("chatList").addEventListener("change", (event) => {
   selectedChatId = event.target.value;
+  renderChats();
+});
+$("chatFutureDays").addEventListener("change", (event) => {
+  chatFutureDays = Number(event.target.value);
   renderChats();
 });
 $("addProduct").addEventListener("click", () => openProductDialog());

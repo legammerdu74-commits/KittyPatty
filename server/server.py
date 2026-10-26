@@ -26,6 +26,7 @@ TOKEN = os.environ.get("PATE_TOKEN", "")
 PORT = int(os.environ.get("PATE_PORT", "8765"))
 HOST = os.environ.get("PATE_HOST", "0.0.0.0")
 INDEX = HERE / "static" / "index.html"
+LOGO = HERE / "static" / "logo.svg"
 MAX_BODY = 20_000_000
 
 LOCK = threading.Lock()
@@ -121,6 +122,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, INDEX.read_bytes(), "text/html; charset=utf-8")
             except FileNotFoundError:
                 self._send(500, {"error": "static/index.html introuvable"})
+        elif path == "/logo.svg":
+            try:
+                self._send(200, LOGO.read_bytes(), "image/svg+xml; charset=utf-8")
+            except FileNotFoundError:
+                self._send(404, {"error": "static/logo.svg introuvable"})
         elif path == "/api/health":
             self._send(200, {"ok": True, "tokenRequired": bool(TOKEN)})
         elif path == "/api/state":
