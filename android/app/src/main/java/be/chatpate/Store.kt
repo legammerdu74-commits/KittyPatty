@@ -64,6 +64,7 @@ object Store {
                         products = products,
                         foodTypes = foodTypes,
                         foodPatterns = ensureFoodPatterns(parseFoodPatterns(o.optJSONArray("foodPatterns"))),
+                        kibblePackages = parseKibblePackages(o.optJSONArray("kibblePackages")),
                     )
                 }
 
@@ -190,6 +191,25 @@ object Store {
         mutate { state ->
             state.copy(foodPatterns = state.foodPatterns.map {
                 if (it.id == id) it.copy(deleted = true, updatedAt = System.currentTimeMillis()) else it
+            })
+        }
+    }
+
+    fun upsertKibblePackage(pack: KibblePackage) {
+        val updated = pack.copy(updatedAt = System.currentTimeMillis())
+        mutate { state ->
+            val exists = state.kibblePackages.any { it.id == updated.id }
+            state.copy(kibblePackages = if (exists) {
+                state.kibblePackages.map { if (it.id == updated.id) updated else it }
+            } else state.kibblePackages + updated)
+        }
+    }
+
+    fun deleteKibblePackage(id: String) {
+        mutate { state ->
+            val now = System.currentTimeMillis()
+            state.copy(kibblePackages = state.kibblePackages.map {
+                if (it.id == id) it.copy(deleted = true, updatedAt = now) else it
             })
         }
     }
@@ -350,6 +370,7 @@ object Store {
         remoteProducts: List<FoodProduct> = emptyList(),
         remoteFoodTypes: List<FoodType> = emptyList(),
         remoteFoodPatterns: List<FoodPattern> = emptyList(),
+        remoteKibblePackages: List<KibblePackage> = emptyList(),
     ): Boolean {
         var changed = false
         mutate { s ->
@@ -407,6 +428,15 @@ object Store {
                     changed = true
                 }
             }
+            val packageMap = LinkedHashMap<String, KibblePackage>()
+            s.kibblePackages.forEach { packageMap[it.id] = it }
+            for (pack in remoteKibblePackages) {
+                val local = packageMap[pack.id]
+                if (local == null || pack.updatedAt > local.updatedAt) {
+                    packageMap[pack.id] = pack
+                    changed = true
+                }
+            }
             if (changed) s.copy(
                 plans = pm.values.toList(),
                 entries = em.values.toList(),
@@ -414,6 +444,7 @@ object Store {
                 products = fm.values.toList(),
                 foodTypes = tm.values.toList(),
                 foodPatterns = patternMap.values.toList(),
+                kibblePackages = packageMap.values.toList(),
             ) else s
         }
         return changed
@@ -445,8 +476,11 @@ object Store {
             s.foodTypes.forEach { foodTypes.put(it.toJson()) }
             val foodPatterns = JSONArray()
             s.foodPatterns.forEach { foodPatterns.put(it.toJson()) }
+            val kibblePackages = JSONArray()
+            s.kibblePackages.forEach { kibblePackages.put(it.toJson()) }
             val txt = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats)
-                .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns).toString()
+                .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns)
+                .put("kibblePackages", kibblePackages).toString()
             val tmp = File(f.parentFile, "state.json.tmp")
             tmp.writeText(txt)
             if (!tmp.renameTo(f)) {

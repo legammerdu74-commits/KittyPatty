@@ -42,9 +42,13 @@ def load_state():
             "products": list(s.get("products", [])),
             "foodTypes": list(s.get("foodTypes", [])),
             "foodPatterns": list(s.get("foodPatterns", [])),
+            "kibblePackages": list(s.get("kibblePackages", [])),
         }
     except (FileNotFoundError, ValueError):
-        return {"plans": [], "entries": [], "cats": [], "products": [], "foodTypes": [], "foodPatterns": []}
+        return {
+            "plans": [], "entries": [], "cats": [], "products": [],
+            "foodTypes": [], "foodPatterns": [], "kibblePackages": [],
+        }
 
 
 def save_state(state):
@@ -147,8 +151,9 @@ class Handler(BaseHTTPRequestHandler):
             products_in = incoming.get("products", [])
             food_types_in = incoming.get("foodTypes", [])
             food_patterns_in = incoming.get("foodPatterns", [])
+            kibble_packages_in = incoming.get("kibblePackages", [])
             if not all(isinstance(items, list) for items in (
-                plans_in, entries_in, cats_in, products_in, food_types_in, food_patterns_in
+                plans_in, entries_in, cats_in, products_in, food_types_in, food_patterns_in, kibble_packages_in
             )):
                 raise ValueError("sync data fields must be lists")
         except (ValueError, AttributeError):
@@ -162,6 +167,7 @@ class Handler(BaseHTTPRequestHandler):
             state["products"] = merge_lists(state["products"], products_in)
             state["foodTypes"] = merge_lists(state.get("foodTypes", []), food_types_in)
             state["foodPatterns"] = merge_lists(state.get("foodPatterns", []), food_patterns_in)
+            state["kibblePackages"] = merge_lists(state.get("kibblePackages", []), kibble_packages_in)
             save_state(state)
             self._send(200, state)
 

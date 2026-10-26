@@ -86,6 +86,121 @@ private fun CatPicker(cats: List<Cat>, selected: List<String>, onChange: (List<S
     }
 }
 
+@Composable
+fun KibblePackageDialog(
+    cats: List<Cat>,
+    initial: KibblePackage? = null,
+    onSave: (KibblePackage) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val ctx = LocalContext.current
+    var price by remember(initial?.id) { mutableStateOf(initial?.price.orEmpty()) }
+    var brand by remember(initial?.id) { mutableStateOf(initial?.brand.orEmpty()) }
+    var flavor by remember(initial?.id) { mutableStateOf(initial?.flavor.orEmpty()) }
+    var specialty by remember(initial?.id) { mutableStateOf(initial?.specialty.orEmpty()) }
+    var addedOn by remember(initial?.id) {
+        mutableStateOf(
+            initial?.addedOn?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                ?: LocalDate.now(ZoneId.systemDefault())
+        )
+    }
+    var finishedOn by remember(initial?.id) {
+        mutableStateOf(initial?.finishedOn?.let { runCatching { LocalDate.parse(it) }.getOrNull() })
+    }
+    var catIds by remember(initial?.id) {
+        mutableStateOf(initial?.catIds.orEmpty().filter { id -> cats.any { it.id == id } })
+    }
+    val parsedPrice = price.replace(',', '.').toDoubleOrNull()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(if (initial == null) "Ajouter un paquet de croquettes" else "Modifier le paquet") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                OutlinedTextField(
+                    value = brand,
+                    onValueChange = { brand = it },
+                    label = { Text("Marque (facultatif)") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = flavor,
+                    onValueChange = { flavor = it },
+                    label = { Text("Goût (facultatif)") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = specialty,
+                    onValueChange = { specialty = it },
+                    label = { Text("Spécificité (facultatif)") },
+                    placeholder = { Text("ex. Urinary, Senior") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = price,
+                    onValueChange = { price = it.filter { char -> char.isDigit() || char == ',' || char == '.' } },
+                    label = { Text("Prix du paquet (€)") },
+                    placeholder = { Text("ex. 18,90") },
+                    singleLine = true,
+                )
+                Text("Date d’ajout", fontWeight = FontWeight.Bold)
+                OutlinedButton(onClick = {
+                    DatePickerDialog(
+                        ctx,
+                        { _, year, month, day -> addedOn = LocalDate.of(year, month + 1, day) },
+                        addedOn.year, addedOn.monthValue - 1, addedOn.dayOfMonth,
+                    ).show()
+                }) { Text(Fmt.dateLong(addedOn)) }
+                Text("Date de fin (facultative)", fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedButton(onClick = {
+                        val date = finishedOn ?: LocalDate.now(ZoneId.systemDefault())
+                        DatePickerDialog(
+                            ctx,
+                            { _, year, month, day -> finishedOn = LocalDate.of(year, month + 1, day) },
+                            date.year, date.monthValue - 1, date.dayOfMonth,
+                        ).show()
+                    }) {
+                        Text(finishedOn?.let { Fmt.dateLong(it) } ?: "Paquet en cours")
+                    }
+                    if (finishedOn != null) {
+                        TextButton(onClick = { finishedOn = null }) { Text("En cours") }
+                    }
+                }
+                Text("Chats qui mangent ce paquet", fontWeight = FontWeight.Bold)
+                CatPicker(cats, catIds) { catIds = it }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = parsedPrice != null && parsedPrice >= 0 && catIds.isNotEmpty() &&
+                    (finishedOn == null || !finishedOn!!.isBefore(addedOn)),
+                onClick = {
+                    onSave(
+                        KibblePackage(
+                            id = initial?.id ?: UUID.randomUUID().toString().take(8),
+                            price = parsedPrice!!.toString(),
+                            addedOn = addedOn.toString(),
+                            finishedOn = finishedOn?.toString().orEmpty(),
+                            catIds = catIds.distinct(),
+                            brand = brand.trim(),
+                            flavor = flavor.trim(),
+                            specialty = specialty.trim(),
+                            deleted = initial?.deleted ?: false,
+                            updatedAt = initial?.updatedAt ?: System.currentTimeMillis(),
+                        ),
+                    )
+                    onDismiss()
+                },
+            ) { Text(if (initial == null) "Enregistrer" else "Enregistrer les modifications") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
+
 // ---------------------------------------------------------------------------------------------
 // Créer / modifier un programme
 // ---------------------------------------------------------------------------------------------

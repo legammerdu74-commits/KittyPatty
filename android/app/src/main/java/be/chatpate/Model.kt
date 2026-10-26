@@ -132,6 +132,46 @@ data class FoodProduct(
     }
 }
 
+data class KibblePackage(
+    val id: String,
+    val price: String,
+    val addedOn: String,
+    val finishedOn: String = "",
+    val catIds: List<String>,
+    val brand: String = "",
+    val flavor: String = "",
+    val specialty: String = "",
+    val deleted: Boolean = false,
+    val updatedAt: Long = System.currentTimeMillis(),
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("id", id)
+        .put("price", price)
+        .put("addedOn", addedOn)
+        .put("finishedOn", finishedOn)
+        .put("catIds", jsonArrayOf(catIds))
+        .put("brand", brand)
+        .put("flavor", flavor)
+        .put("specialty", specialty)
+        .put("deleted", deleted)
+        .put("updatedAt", updatedAt)
+
+    companion object {
+        fun fromJson(o: JSONObject) = KibblePackage(
+            id = o.getString("id"),
+            price = o.optString("price", ""),
+            addedOn = o.optString("addedOn", ""),
+            finishedOn = o.optString("finishedOn", ""),
+            catIds = strList(o.optJSONArray("catIds")),
+            brand = o.optString("brand", ""),
+            flavor = o.optString("flavor", ""),
+            specialty = o.optString("specialty", ""),
+            deleted = o.optBoolean("deleted", false),
+            updatedAt = o.optLong("updatedAt", 0L),
+        )
+    }
+}
+
 /** Un chat. */
 data class Cat(
     val id: String,
@@ -353,6 +393,7 @@ data class AppState(
     val products: List<FoodProduct> = defaultFoodProducts(),
     val foodTypes: List<FoodType> = defaultFoodTypes(),
     val foodPatterns: List<FoodPattern> = defaultFoodPatterns(),
+    val kibblePackages: List<KibblePackage> = emptyList(),
 )
 
 fun parsePlans(arr: JSONArray?): List<Plan> {
@@ -403,5 +444,12 @@ fun parseFoodPatterns(arr: JSONArray?): List<FoodPattern> {
     if (arr == null) return emptyList()
     return (0 until arr.length()).mapNotNull { i ->
         runCatching { FoodPattern.fromJson(arr.getJSONObject(i)) }.getOrNull()
+    }
+}
+
+fun parseKibblePackages(arr: JSONArray?): List<KibblePackage> {
+    if (arr == null) return emptyList()
+    return (0 until arr.length()).mapNotNull { i ->
+        runCatching { KibblePackage.fromJson(arr.getJSONObject(i)) }.getOrNull()
     }
 }

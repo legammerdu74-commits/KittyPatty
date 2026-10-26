@@ -199,6 +199,7 @@ fun App(openEntry: MutableState<String?>) {
                 entries = state.entries.filter { !it.deleted },
                 products = state.products,
                 foodPatterns = state.foodPatterns,
+                kibblePackages = state.kibblePackages.filterNot { it.deleted },
                 selectedCatId = selectedCatId,
                 modifier = mod,
                 onSelect = { selectedCatId = it },
@@ -210,6 +211,8 @@ fun App(openEntry: MutableState<String?>) {
             else -> FoodManagementScreen(
                 products = state.products.filter { !it.deleted },
                 foodPatterns = state.foodPatterns.filter { !it.deleted },
+                kibblePackages = state.kibblePackages.filterNot { it.deleted },
+                cats = cats,
                 modifier = mod,
                 onSaveProduct = {
                     Store.upsertProduct(it)
@@ -225,6 +228,18 @@ fun App(openEntry: MutableState<String?>) {
                 },
                 onDeletePattern = {
                     Store.deleteFoodPattern(it)
+                    Planner.afterChange(ctx)
+                },
+                onSaveKibblePackage = {
+                    Store.upsertKibblePackage(it)
+                    Planner.afterChange(ctx)
+                },
+                onFinishKibblePackage = { pack ->
+                    Store.upsertKibblePackage(pack.copy(finishedOn = LocalDate.now().toString()))
+                    Planner.afterChange(ctx)
+                },
+                onDeleteKibblePackage = {
+                    Store.deleteKibblePackage(it)
                     Planner.afterChange(ctx)
                 },
             )
@@ -433,6 +448,15 @@ private fun ButtonLabel(icon: Int, text: String) {
         Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(20.dp))
         Spacer(Modifier.width(6.dp))
         Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+    }
+}
+
+@Composable
+private fun FoodCategoryLabel(icon: Int, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(17.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1)
     }
 }
 
@@ -1146,49 +1170,46 @@ fun PlansScreen(
 private fun FoodManagementScreen(
     products: List<FoodProduct>,
     foodPatterns: List<FoodPattern>,
+    kibblePackages: List<KibblePackage>,
+    cats: List<Cat>,
     modifier: Modifier,
     onSaveProduct: (FoodProduct) -> Unit,
     onDeleteProduct: (String) -> Unit,
     onSavePattern: (FoodPattern) -> Unit,
     onDeletePattern: (String) -> Unit,
+    onSaveKibblePackage: (KibblePackage) -> Unit,
+    onFinishKibblePackage: (KibblePackage) -> Unit,
+    onDeleteKibblePackage: (String) -> Unit,
 ) {
     var category by remember { mutableIntStateOf(0) }
     var showProductEditor by remember { mutableStateOf(false) }
     var editingProductId by remember { mutableStateOf<String?>(null) }
+    var showKibbleEditor by remember { mutableStateOf(false) }
+    var editingKibbleId by remember { mutableStateOf<String?>(null) }
+    var deleteKibbleId by remember { mutableStateOf<String?>(null) }
 
     Column(modifier.fillMaxSize()) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Text("Alimentation", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            if (category == 0) {
-                Button(
-                    onClick = { category = 0 },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) { ButtonLabel(R.drawable.ic_nav_food, "Nourriture") }
-            } else {
-                OutlinedButton(
-                    onClick = { category = 0 },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) { ButtonLabel(R.drawable.ic_nav_food, "Nourriture") }
-            }
-            if (category == 1) {
-                Button(
-                    onClick = { category = 1 },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) { ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons") }
-            } else {
-                OutlinedButton(
-                    onClick = { category = 1 },
-                    modifier = Modifier.weight(1f).height(52.dp),
-                    contentPadding = PaddingValues(horizontal = 8.dp),
-                ) { ButtonLabel(R.drawable.ic_action_repeat, "Combinaisons") }
+        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("Nourriture", "Croquettes").forEachIndexed { index, label ->
+                val selected = if (index == 0) category != 2 else category == 2
+                val target = if (index == 0) 0 else 2
+                val icon = R.drawable.ic_nav_food
+                if (selected) {
+                    Button(
+                        onClick = { category = target },
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) { FoodCategoryLabel(icon, label) }
+                } else {
+                    OutlinedButton(
+                        onClick = { category = target },
+                        modifier = Modifier.weight(1f).height(52.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp),
+                    ) { FoodCategoryLabel(icon, label) }
+                }
             }
         }
 
@@ -1199,11 +1220,27 @@ private fun FoodManagementScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    Button(onClick = {
-                        editingProductId = null
-                        showProductEditor = true
-                    }) {
-                        Text("Ajouter une nourriture")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Button(
+                            onClick = {
+                                editingProductId = null
+                                showProductEditor = true
+                            },
+                            modifier = Modifier.weight(1.5f),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) {
+                            Text("Ajouter une nourriture", maxLines = 1)
+                        }
+                        OutlinedButton(
+                            onClick = { category = 1 },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) {
+                            FoodCategoryLabel(R.drawable.ic_action_repeat, "Combinaisons")
+                        }
                     }
                 }
                 if (products.isEmpty()) {
@@ -1239,7 +1276,7 @@ private fun FoodManagementScreen(
                     }
                 }
             }
-        } else {
+        } else if (category == 1) {
             FoodSettingsScreen(
                 patterns = foodPatterns,
                 modifier = Modifier.weight(1f),
@@ -1247,6 +1284,122 @@ private fun FoodManagementScreen(
                 onSavePattern = onSavePattern,
                 onDeletePattern = onDeletePattern,
             )
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    Text(
+                        "Ajoute chaque paquet ouvert. Termine-le lorsqu’il est vide pour calculer sa durée réelle.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Button(onClick = { showKibbleEditor = true }, modifier = Modifier.padding(top = 8.dp)) {
+                        Text("Ajouter un paquet")
+                    }
+                }
+                if (kibblePackages.isEmpty()) {
+                    item { EmptyState(R.drawable.ic_nav_food, "Aucun paquet de croquettes enregistré.") }
+                }
+                items(kibblePackages.sortedByDescending { it.addedOn }, key = { it.id }) { pack ->
+                    val addedOn = runCatching { LocalDate.parse(pack.addedOn) }.getOrNull()
+                    val finishedOn = runCatching { LocalDate.parse(pack.finishedOn) }.getOrNull()
+                    val durationEnd = finishedOn ?: LocalDate.now()
+                    val duration = addedOn?.let {
+                        if (durationEnd.isBefore(it)) 0 else (ChronoUnit.DAYS.between(it, durationEnd) + 1).toInt()
+                    }
+                    val currency = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("fr-BE"))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                        shape = MaterialTheme.shapes.large,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text(
+                                        pack.brand.ifBlank { "Paquet de croquettes" },
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    if (pack.flavor.isNotBlank()) {
+                                        Text(pack.flavor, style = MaterialTheme.typography.bodyMedium)
+                                    }
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    currency.format(pack.price.replace(',', '.').toDoubleOrNull() ?: 0.0),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                            }
+                            if (pack.specialty.isNotBlank()) {
+                                Text(
+                                    pack.specialty,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Ajout", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        addedOn?.let { Fmt.dateLong(it) } ?: "Date inconnue",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                                Column(Modifier.weight(1f)) {
+                                    Text("Durée", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text(
+                                        "${duration ?: "?"} jour${if (duration == 1) "" else "s"}${if (finishedOn == null) " · en cours" else ""}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                    )
+                                }
+                            }
+                            CatsLine(cats.filter { it.id in pack.catIds })
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                OutlinedButton(
+                                    onClick = { if (finishedOn == null) onFinishKibblePackage(pack) },
+                                    enabled = finishedOn == null,
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 4.dp),
+                                ) {
+                                    Text(if (finishedOn == null) "Terminer" else "Terminé", maxLines = 1)
+                                }
+                                OutlinedButton(
+                                    onClick = {
+                                        editingKibbleId = pack.id
+                                        showKibbleEditor = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 4.dp),
+                                ) { Text("Modifier", maxLines = 1) }
+                                OutlinedButton(
+                                    onClick = { deleteKibbleId = pack.id },
+                                    modifier = Modifier.weight(1f),
+                                    contentPadding = PaddingValues(horizontal = 4.dp),
+                                ) {
+                                    Icon(
+                                        painterResource(R.drawable.ic_action_delete),
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Supprimer", maxLines = 1, color = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1262,6 +1415,33 @@ private fun FoodManagementScreen(
             },
         )
     }
+    if (showKibbleEditor) {
+        val editingPackage = kibblePackages.firstOrNull { it.id == editingKibbleId }
+        KibblePackageDialog(
+            cats = cats,
+            initial = editingPackage,
+            onSave = onSaveKibblePackage,
+            onDismiss = {
+                showKibbleEditor = false
+                editingKibbleId = null
+            },
+        )
+    }
+    val packageToDelete = kibblePackages.firstOrNull { it.id == deleteKibbleId }
+    if (packageToDelete != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { deleteKibbleId = null },
+            title = { Text("Supprimer ce paquet ?") },
+            text = { Text("Son coût ne sera plus compté dans les statistiques des chats.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    onDeleteKibblePackage(packageToDelete.id)
+                    deleteKibbleId = null
+                }) { Text("Supprimer", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = { TextButton(onClick = { deleteKibbleId = null }) { Text("Annuler") } },
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1269,29 +1449,46 @@ private fun FoodManagementScreen(
 // ---------------------------------------------------------------------------------------------
 
 private data class FoodQuantity(val amount: Double, val isGrams: Boolean)
-private data class MonthlyFoodCost(val amount: Double, val unpricedMeals: Int)
+private data class MonthlyFoodCost(
+    val mealAmount: Double,
+    val kibbleAmount: Double,
+    val unpricedMeals: Int,
+    val planDetails: List<PlanCostDetail>,
+) {
+    val amount: Double get() = mealAmount + kibbleAmount
+}
 
-private fun parseFoodQuantity(value: String): FoodQuantity? {
+private data class PlanCostDetail(
+    val timeMin: Int,
+    val everyDays: Int,
+    val quantity: String,
+    val meals: Int,
+    val amount: Double,
+)
+
+private fun parseFoodQuantity(value: String, product: FoodProduct?): FoodQuantity? {
     val match = Regex("""^\s*(\d+(?:[.,]\d+)?)\s*(g|gr|grammes?|sachets?|portions?)?\b""", RegexOption.IGNORE_CASE)
         .find(value) ?: return null
     val amount = match.groupValues[1].replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
     val unit = match.groupValues[2].lowercase(Locale.ROOT)
+    val productWeight = product?.weight?.replace(',', '.')?.toDoubleOrNull()
     return when {
         unit.startsWith("g") -> FoodQuantity(amount, true)
         unit.isNotEmpty() -> FoodQuantity(amount, false)
-        else -> null
+        productWeight != null && kotlin.math.abs(amount - productWeight) < 0.0001 -> FoodQuantity(amount, true)
+        else -> FoodQuantity(amount, false)
     }
 }
 
 private fun gramsFor(quantity: String, product: FoodProduct?): Double? {
-    val parsed = parseFoodQuantity(quantity) ?: return null
+    val parsed = parseFoodQuantity(quantity, product) ?: return null
     if (parsed.isGrams) return parsed.amount
     val weight = product?.weight?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
     return parsed.amount * weight
 }
 
 private fun costFor(quantity: String, product: FoodProduct?): Double? {
-    val parsed = parseFoodQuantity(quantity) ?: return null
+    val parsed = parseFoodQuantity(quantity, product) ?: return null
     val price = product?.packPrice?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
     if (!parsed.isGrams) return parsed.amount * price
     val weight = product.weight.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 } ?: return null
@@ -1303,26 +1500,58 @@ private fun monthlyFoodCost(
     plans: List<Plan>,
     patterns: List<FoodPattern>,
     products: List<FoodProduct>,
-    today: LocalDate,
+    kibblePackages: List<KibblePackage>,
+    month: YearMonth,
 ): MonthlyFoodCost {
-    var amount = 0.0
+    var mealAmount = 0.0
+    var kibbleAmount = 0.0
     var unpriced = 0
+    val planDetails = mutableListOf<PlanCostDetail>()
+    val firstDay = month.atDay(1)
+    val lastDay = month.atEndOfMonth()
     for (plan in plans) {
         if (!plan.active || plan.deleted || catId !in plan.catIds) continue
         val start = runCatching { LocalDate.parse(plan.start) }.getOrNull() ?: continue
-        for (offset in 0L until 30L) {
-            val date = today.plusDays(offset)
-            if (date.isBefore(start) || ChronoUnit.DAYS.between(start, date) % plan.everyDays.coerceAtLeast(1) != 0L) continue
-            val product = plan.foodProductOn(date, patterns, products)
-            val mealCost = costFor(plan.qty, product)
-            if (mealCost == null) {
-                unpriced++
-            } else {
-                amount += mealCost / plan.catIds.distinct().size.coerceAtLeast(1)
+        var date = if (start.isAfter(firstDay)) start else firstDay
+        var mealCount = 0
+        var planAmount = 0.0
+        while (!date.isAfter(lastDay)) {
+            if (!date.isBefore(start) && ChronoUnit.DAYS.between(start, date) % plan.everyDays.coerceAtLeast(1) == 0L) {
+                mealCount++
+                val product = plan.foodProductOn(date, patterns, products)
+                val mealCost = costFor(plan.qty, product)
+                if (mealCost == null) {
+                    unpriced++
+                } else {
+                    val catShare = mealCost / plan.catIds.distinct().size.coerceAtLeast(1)
+                    mealAmount += catShare
+                    planAmount += catShare
+                }
             }
+            date = date.plusDays(1)
+        }
+        if (mealCount > 0) {
+            planDetails += PlanCostDetail(plan.timeMin, plan.everyDays, plan.qty, mealCount, planAmount)
         }
     }
-    return MonthlyFoodCost(amount, unpriced)
+    val today = LocalDate.now()
+    for (pack in kibblePackages) {
+        val sharedBy = pack.catIds.distinct().size
+        if (catId !in pack.catIds || sharedBy == 0) continue
+        val price = pack.price.replace(',', '.').toDoubleOrNull()?.takeIf { it >= 0 } ?: continue
+        val start = runCatching { LocalDate.parse(pack.addedOn) }.getOrNull() ?: continue
+        val finish = runCatching { LocalDate.parse(pack.finishedOn) }.getOrNull() ?: today
+        val end = if (finish.isAfter(today)) today else finish
+        if (end.isBefore(start)) continue
+        val duration = ChronoUnit.DAYS.between(start, end) + 1
+        val overlapStart = if (start.isAfter(firstDay)) start else firstDay
+        val overlapEnd = if (end.isBefore(lastDay)) end else lastDay
+        if (!overlapEnd.isBefore(overlapStart)) {
+            val daysInMonth = ChronoUnit.DAYS.between(overlapStart, overlapEnd) + 1
+            kibbleAmount += price * daysInMonth / duration / sharedBy
+        }
+    }
+    return MonthlyFoodCost(mealAmount, kibbleAmount, unpriced, planDetails)
 }
 
 private fun formatGrams(grams: Double): String = if (grams >= 1000) {
@@ -1338,6 +1567,7 @@ fun CatsScreen(
     entries: List<Entry>,
     products: List<FoodProduct>,
     foodPatterns: List<FoodPattern>,
+    kibblePackages: List<KibblePackage>,
     selectedCatId: String?,
     modifier: Modifier,
     onSelect: (String) -> Unit,
@@ -1396,9 +1626,11 @@ fun CatsScreen(
             (gramsFor(quantity, product) ?: 0.0) / entry.catIds.distinct().size.coerceAtLeast(1)
         }
         val cost = monthlyFoodCost(
-            selectedCat.id, plans, foodPatterns, products, LocalDate.now(),
+            selectedCat.id, plans, foodPatterns, products, kibblePackages, YearMonth.now(),
         )
         val currency = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("fr-BE"))
+        val monthLabel = YearMonth.now().month.getDisplayName(java.time.format.TextStyle.FULL, Locale.FRENCH)
+            .replaceFirstChar { it.titlecase(Locale.FRENCH) }
         LazyColumn(
             modifier = modifier,
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 96.dp),
@@ -1423,17 +1655,31 @@ fun CatsScreen(
                         "Coût estimé",
                         when {
                             cost.unpricedMeals > 0 && cost.amount > 0 -> "≥ ${currency.format(cost.amount)}"
-                            cost.unpricedMeals > 0 || cost.amount == 0.0 -> "—"
+                            cost.unpricedMeals > 0 -> "—"
                             else -> currency.format(cost.amount)
                         },
-                        if (cost.unpricedMeals > 0) "sur 30 jours · ${cost.unpricedMeals} repas incomplets" else "sur 30 jours",
+                        if (cost.unpricedMeals > 0) "$monthLabel · ${cost.unpricedMeals} repas incomplets" else "Mois de $monthLabel",
                         Modifier.weight(1f),
                     )
                 }
             }
             item {
                 Text(
-                    "Le coût est estimé à partir des programmes des 30 prochains jours. Les repas partagés sont répartis entre les chats ; les produits sans prix ou quantité ne sont pas comptés.",
+                    "Détail · pâtées ${currency.format(cost.mealAmount)} · croquettes ${currency.format(cost.kibbleAmount)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                cost.planDetails.forEach { detail ->
+                    Text(
+                        "${Fmt.timeMin(detail.timeMin)} · ${Fmt.every(detail.everyDays)} · " +
+                            "${detail.quantity.ifBlank { "quantité non indiquée" }} : " +
+                            "${detail.meals} repas · ${currency.format(detail.amount)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    "Le coût des repas est estimé sur le mois calendrier. Le prix des croquettes est réparti sur la durée du paquet (durée écoulée pour un paquet en cours) et partagé entre les chats concernés.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

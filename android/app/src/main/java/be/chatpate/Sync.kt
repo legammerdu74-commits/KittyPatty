@@ -43,8 +43,11 @@ object Sync {
             snap.foodTypes.forEach { foodTypes.put(it.toJson()) }
             val foodPatterns = JSONArray()
             snap.foodPatterns.forEach { foodPatterns.put(it.toJson()) }
+            val kibblePackages = JSONArray()
+            snap.kibblePackages.forEach { kibblePackages.put(it.toJson()) }
             val body = JSONObject().put("plans", plans).put("entries", entries).put("cats", cats)
-                .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns).toString()
+                .put("products", products).put("foodTypes", foodTypes).put("foodPatterns", foodPatterns)
+                .put("kibblePackages", kibblePackages).toString()
 
             val url = if (base.startsWith("http://") || base.startsWith("https://")) base else "http://$base"
             conn = URL("$url/api/sync").openConnection() as HttpURLConnection
@@ -75,6 +78,7 @@ object Sync {
                 parseProducts(o.optJSONArray("products")),
                 parseFoodTypes(o.optJSONArray("foodTypes")),
                 parseFoodPatterns(o.optJSONArray("foodPatterns")),
+                parseKibblePackages(o.optJSONArray("kibblePackages")),
             )
             if (changed) {
                 Planner.reconcile()

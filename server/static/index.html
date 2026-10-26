@@ -258,7 +258,7 @@
 const PATES = { poulet: "Poulet", boeuf: "Bœuf" };
 const COLORS = { poulet: "var(--poulet)", boeuf: "var(--boeuf)" };
 const FOOD_ICONS = { poulet: "🍗", boeuf: "🥩", sachet: "🥫" };
-let state = { plans: [], entries: [], cats: [], products: [], foodTypes: [], foodPatterns: [] };
+let state = { plans: [], entries: [], cats: [], products: [], foodTypes: [], foodPatterns: [], kibblePackages: [] };
 let openForm = null;      // id du repas dont le formulaire est ouvert
 let formDraft = null;     // valeurs saisies, conservées pendant les rafraîchissements
 let activeTab = "overdue";
@@ -832,19 +832,22 @@ function chatMeals(cat) {
   return { scheduled: scheduled.sort((a, b) => a.at - b.at).slice(0, 30), history };
 }
 
-function parseFoodQuantity(value) {
+function parseFoodQuantity(value, product) {
   const match = /^\s*(\d+(?:[.,]\d+)?)\s*(g|gr|grammes?|sachets?|portions?)?\b/i.exec(value || "");
   if (!match) return null;
   const amount = Number(match[1].replace(",", "."));
   if (!Number.isFinite(amount) || amount < 0) return null;
   const unit = (match[2] || "").toLowerCase();
   if (unit.startsWith("g")) return { amount, isGrams: true };
-  if (unit) return { amount, isGrams: false };
-  return null;
+  const productWeight = Number(String(product?.weight || "").replace(",", "."));
+  if (!unit && Number.isFinite(productWeight) && Math.abs(amount - productWeight) < 0.0001) {
+    return { amount, isGrams: true };
+  }
+  return { amount, isGrams: false };
 }
 
 function gramsFor(quantity, product) {
-  const parsed = parseFoodQuantity(quantity);
+  const parsed = parseFoodQuantity(quantity, product);
   if (!parsed) return null;
   if (parsed.isGrams) return parsed.amount;
   const weight = Number(String(product?.weight || "").replace(",", "."));
@@ -852,7 +855,7 @@ function gramsFor(quantity, product) {
 }
 
 function costFor(quantity, product) {
-  const parsed = parseFoodQuantity(quantity);
+  const parsed = parseFoodQuantity(quantity, product);
   const rawPrice = String(product?.packPrice || "").trim();
   const price = Number(rawPrice.replace(",", "."));
   if (!parsed || !rawPrice || !Number.isFinite(price) || price < 0) return null;
@@ -871,29 +874,65 @@ function chatFoodStats(cat) {
     const sharedBy = new Set(entry.catIds || []).size || 1;
     return total + (gramsFor(quantity, product) || 0) / sharedBy;
   }, 0);
-  let monthlyCost = 0;
+  let mealMonthlyCost = 0;
+  let kibbleMonthlyCost = 0;
   let unpricedMeals = 0;
+  const planDetails = [];
   const today = new Date();
-  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
   for (const plan of state.plans || []) {
     if (plan.deleted || !plan.active || !(plan.catIds || []).includes(cat.id)) continue;
     const start = localDate(plan.start);
     if (!start) continue;
     const interval = Math.max(1, Number(plan.everyDays) || 1);
-    for (let offset = 0; offset < 30; offset++) {
-      const date = new Date(todayStart.getFullYear(), todayStart.getMonth(), todayStart.getDate() + offset);
-      if (date < start || dayDiff(start, date) % interval !== 0) continue;
+    let planMealCount = 0;
+    let planAmount = 0;
+    for (let date = firstDay > start ? firstDay : start; date <= lastDay; date = new Date(date.getFullYear(), date.getMonth(), date.getDate() + 1)) {
+      if (dayDiff(start, date) % interval !== 0) continue;
+      planMealCount++;
       const product = planFoodOn(plan, date, start);
       const mealCost = costFor(plan.qty || "", product);
       if (mealCost === null) {
         unpricedMeals++;
       } else {
         const sharedBy = new Set(plan.catIds || []).size || 1;
-        monthlyCost += mealCost / sharedBy;
+        const catShare = mealCost / sharedBy;
+        mealMonthlyCost += catShare;
+        planAmount += catShare;
       }
     }
+    if (planMealCount > 0) {
+      planDetails.push({
+        timeMin: Number(plan.timeMin) || 0,
+        interval,
+        quantity: plan.qty || "",
+        meals: planMealCount,
+        amount: planAmount,
+      });
+    }
   }
-  return { totalGrams, mealCount: meals.length, monthlyCost, unpricedMeals };
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  for (const pack of state.kibblePackages || []) {
+    if (pack.deleted || !(pack.catIds || []).includes(cat.id)) continue;
+    const sharedBy = new Set(pack.catIds || []).size || 1;
+    const price = Number(String(pack.price || "").replace(",", "."));
+    const addedOn = localDate(pack.addedOn);
+    const recordedFinish = localDate(pack.finishedOn);
+    const end = recordedFinish && recordedFinish < todayDate ? recordedFinish : todayDate;
+    if (!addedOn || !Number.isFinite(price) || price < 0 || end < addedOn) continue;
+    const durationDays = dayDiff(addedOn, end) + 1;
+    const overlapStart = addedOn > firstDay ? addedOn : firstDay;
+    const overlapEnd = end < lastDay ? end : lastDay;
+    if (overlapEnd < overlapStart) continue;
+    const daysInMonth = dayDiff(overlapStart, overlapEnd) + 1;
+    kibbleMonthlyCost += price * daysInMonth / durationDays / sharedBy;
+  }
+  return {
+    totalGrams, mealCount: meals.length,
+    monthlyCost: mealMonthlyCost + kibbleMonthlyCost,
+    mealMonthlyCost, kibbleMonthlyCost, unpricedMeals, planDetails,
+  };
 }
 
 function renderChats() {
@@ -926,6 +965,8 @@ function renderChats() {
     ? (stats.totalGrams / 1000).toLocaleString("fr-BE", { maximumFractionDigits: 2 }) + " kg"
     : Math.round(stats.totalGrams).toLocaleString("fr-BE") + " g";
   const costLabel = stats.monthlyCost.toLocaleString("fr-BE", { style: "currency", currency: "EUR" });
+  const monthLabel = today.toLocaleDateString("fr-BE", { month: "long" });
+  const formatCost = (value) => value.toLocaleString("fr-BE", { style: "currency", currency: "EUR" });
   detail.replaceChildren(
     el("h3", {}, cat.name),
     el("div", { class: "chat-color-bar", title: "Couleur du profil" }),
@@ -933,9 +974,18 @@ function renderChats() {
       el("div", { class: "calendar-stat" }, el("strong", {}, gramsLabel), el("small", {}, "mangé · quantités enregistrées")),
       el("div", { class: "calendar-stat" }, el("strong", {},
         stats.unpricedMeals > 0 ? (stats.monthlyCost > 0 ? "≥ " + costLabel : "—") : costLabel),
-        el("small", {}, stats.unpricedMeals > 0 ? "coût estimé / 30 jours · données incomplètes" : "coût estimé / 30 jours")),
+        el("small", {}, stats.unpricedMeals > 0 ? monthLabel + " · données incomplètes" : "mois de " + monthLabel),
+        el("small", {}, "Pâtées " + formatCost(stats.mealMonthlyCost) +
+          " · croquettes " + formatCost(stats.kibbleMonthlyCost))),
       el("div", { class: "calendar-stat" }, el("strong", {}, String(stats.mealCount)), el("small", {}, "repas donnés"))),
-    el("p", { class: "muted" }, "Les repas partagés sont répartis entre les chats. Le coût est estimé à partir des programmes des 30 prochains jours et exclut les quantités ou tarifs manquants."),
+    el("div", { class: "muted" },
+      "Les repas partagés sont répartis entre les chats. Le coût des croquettes est réparti sur la durée du paquet (durée écoulée pour un paquet en cours) et entre les chats concernés.",
+      ...stats.planDetails.map((plan) => {
+        const time = String(Math.floor(plan.timeMin / 60)).padStart(2, "0") + ":" +
+          String(plan.timeMin % 60).padStart(2, "0");
+        return el("div", {}, time + " · tous les " + plan.interval + " jour(s) · " +
+          (plan.quantity || "quantité non indiquée") + " : " + plan.meals + " repas · " + formatCost(plan.amount));
+      })),
     el("div", { class: "panel-heading" }, el("div", {}, el("h2", {}, "Repas prévus"), el("p", {}, "Les prochains repas associés à ce chat."))),
     el("div", { class: "card-grid" }, ...(scheduled.length ? scheduled.map((meal) => entryCard(meal, false)) : [el("div", { class: "empty" }, "Aucun repas prévu.") ])),
     el("div", { class: "panel-heading", style: "margin-top:24px" }, el("div", {}, el("h2", {}, "Historique"), el("p", {}, "Les repas déjà enregistrés pour ce chat."))),
