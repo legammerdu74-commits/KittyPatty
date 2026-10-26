@@ -2,7 +2,7 @@
 
 **Les repas des chats, sans devoir s’en souvenir à chaque fois.** KittyPatty aide à planifier les repas, suivre ce qui a été servi et garder un œil sur le budget. L’application Android fonctionne seule ; un petit serveur facultatif ajoute la synchronisation et une interface pour ordinateur.
 
-> 🧪 **Version actuelle : 0.11 bêta** — [Télécharger l’APK](https://github.com/legammerdu74-commits/KittyPatty/releases/tag/v0.11). L’APK est une version de test signée en mode débogage.
+> 🧪 **Version actuelle : 0.12 bêta** — [Télécharger l’APK](https://github.com/legammerdu74-commits/KittyPatty/releases/tag/v0.12). L’APK est une version de test signée en mode débogage.
 
 ## 📱 L’application
 
