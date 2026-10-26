@@ -98,10 +98,12 @@ fun App(openEntry: MutableState<String?>) {
     val ctx = LocalContext.current
     val state by Store.state.collectAsState()
     val syncStatus by Sync.status.collectAsState()
+    val updateStatus by AppUpdater.state.collectAsState()
     val cats = state.cats.filter { !it.deleted }
 
     var tab by remember { mutableIntStateOf(0) }
     var showSettings by remember { mutableStateOf(false) }
+    var dismissedUpdateTag by remember { mutableStateOf<String?>(null) }
     var showNewPlan by remember { mutableStateOf(false) }
     var editPlanId by remember { mutableStateOf<String?>(null) }
     var encodeId by remember { mutableStateOf<String?>(null) }
@@ -117,6 +119,8 @@ fun App(openEntry: MutableState<String?>) {
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { tick++ }
     val exactOk = remember(tick) { Alarms.canScheduleExact(ctx) }
     val notifOk = remember(tick) { NotificationManagerCompat.from(ctx).areNotificationsEnabled() }
+
+    LaunchedEffect(Unit) { AppUpdater.check(ctx) }
 
     // Ouverture depuis une notification.
     LaunchedEffect(openEntry.value) {
@@ -356,12 +360,50 @@ fun App(openEntry: MutableState<String?>) {
     if (showSettings) {
         SettingsDialog(
             syncStatus = syncStatus,
+            updateMessage = updateStatus.message,
+            checkingUpdates = updateStatus.checking,
+            onCheckUpdates = { AppUpdater.check(ctx) },
             onSave = { url, token ->
                 Prefs.saveServer(ctx, url, token)
                 Planner.afterChange(ctx)
                 showSettings = false
             },
             onDismiss = { showSettings = false },
+        )
+    }
+    val availableUpdate = updateStatus.release
+    if (!showSettings && availableUpdate != null && dismissedUpdateTag != availableUpdate.tagName) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { dismissedUpdateTag = availableUpdate.tagName },
+            title = { Text("Mise à jour disponible") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${availableUpdate.title} (v${availableUpdate.versionName})", fontWeight = FontWeight.Bold)
+                    if (availableUpdate.notes.isNotBlank()) {
+                        Text(availableUpdate.notes)
+                    }
+                    if (updateStatus.message.isNotBlank()) {
+                        Text(updateStatus.message, style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = !updateStatus.downloading,
+                    onClick = { AppUpdater.downloadAndInstall(ctx, availableUpdate) },
+                ) {
+                    Text(
+                        when {
+                            updateStatus.downloading -> "Téléchargement…"
+                            updateStatus.downloaded -> "Installer la mise à jour"
+                            else -> "Télécharger et installer"
+                        },
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { dismissedUpdateTag = availableUpdate.tagName }) { Text("Plus tard") }
+            },
         )
     }
 }
