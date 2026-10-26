@@ -74,6 +74,10 @@ La synchronisation a lieu à l’ouverture de l’application et après les modi
 2. Pour compiler depuis un terminal : `cd android` puis `gradlew.bat assembleDebug` sous Windows, ou `./gradlew assembleDebug` sous Linux/macOS.
 3. L’APK de débogage est créée dans `android/app/build/outputs/apk/debug/`.
 
+### Mises à jour Android
+
+Au démarrage, KittyPatty vérifie les releases GitHub et propose l’installation si une version plus récente est publiée ; une vérification manuelle est aussi disponible dans les réglages. Le dépôt et ses releases doivent être publics. Chaque release doit contenir un APK et un tag de version croissant correspondant à `versionName` (par exemple `v0.12`) ; incrémente aussi `versionCode`. Android demande l’autorisation d’installer des applications provenant de KittyPatty, puis affiche sa confirmation habituelle. Pour que la mise à jour fonctionne, l’APK doit garder le même certificat de signature que la version installée.
+
 Le projet Android est en Kotlin avec Jetpack Compose ; le serveur et son interface web se trouvent dans `server/`.
 
 ## 📂 Structure

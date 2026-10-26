@@ -960,6 +960,9 @@ fun CatDialog(
 @Composable
 fun SettingsDialog(
     syncStatus: String,
+    updateMessage: String,
+    checkingUpdates: Boolean,
+    onCheckUpdates: () -> Unit,
     onSave: (serverUrl: String, token: String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -1001,6 +1004,13 @@ fun SettingsDialog(
                     thread { Sync.run(ctx) }
                 }) { Text("Tester la synchronisation") }
                 TextButton(onClick = { Notifier.showTest(ctx) }) { Text("Envoyer une notification de test") }
+                Text("Mises à jour de l’application", fontWeight = FontWeight.Bold)
+                if (updateMessage.isNotBlank()) {
+                    Text(updateMessage, style = MaterialTheme.typography.bodySmall)
+                }
+                TextButton(onClick = onCheckUpdates, enabled = !checkingUpdates) {
+                    Text(if (checkingUpdates) "Vérification…" else "Vérifier sur GitHub")
+                }
             }
         },
         confirmButton = { Button(onClick = { onSave(url, token) }) { Text("Enregistrer") } },
