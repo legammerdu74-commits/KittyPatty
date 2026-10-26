@@ -12,8 +12,8 @@ android {
         applicationId = "be.chatpate"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1-beta"
+        versionCode = 2
+        versionName = "0.11"
     }
 
     buildTypes {
