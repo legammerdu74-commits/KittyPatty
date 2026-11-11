@@ -20,9 +20,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -38,13 +40,13 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,6 +66,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -104,6 +107,23 @@ fun App(openEntry: MutableState<String?>) {
     val cats = state.cats.filter { !it.deleted }
 
     var tab by remember { mutableIntStateOf(0) }
+    var stockDraft by remember { mutableStateOf<List<FoodProduct>?>(null) }
+    var managingStocks by remember { mutableStateOf(false) }
+    var showDiscardStockConfirmation by remember { mutableStateOf(false) }
+    var pendingStockExitAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    val hasUnsavedStockChanges = stockDraft?.let { draft ->
+        draft.map { it.copy(updatedAt = 0L) } != state.products.map { it.copy(updatedAt = 0L) }
+    } == true
+    val requestStockExit: (() -> Unit) -> Unit = { onExit ->
+        if (managingStocks && hasUnsavedStockChanges) {
+            pendingStockExitAction = onExit
+            showDiscardStockConfirmation = true
+        } else {
+            managingStocks = false
+            stockDraft = null
+            onExit()
+        }
+    }
     var showSettings by remember { mutableStateOf(false) }
     var dismissedUpdateTag by remember { mutableStateOf<String?>(null) }
     var showNewPlan by remember { mutableStateOf(false) }
@@ -149,11 +169,32 @@ fun App(openEntry: MutableState<String?>) {
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer) {
-                NavTab(tab == 0, { tab = 0 }, R.drawable.ic_nav_home, "Accueil")
-                NavTab(tab == 1, { tab = 1 }, R.drawable.ic_nav_programs, "Programmes")
-                NavTab(tab == 2, { tab = 2 }, R.drawable.ic_nav_cats, "Chats")
-                NavTab(tab == 3, { tab = 3 }, R.drawable.ic_nav_food, "Alimentation")
+            Surface(
+                tonalElevation = 4.dp,
+                shadowElevation = 4.dp,
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .navigationBarsPadding(),
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(72.dp)
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    BottomNavItem(tab == 0, {
+                        if (tab == 3) requestStockExit { tab = 0 } else tab = 0
+                    }, R.drawable.ic_nav_home, "Accueil")
+                    BottomNavItem(tab == 1, {
+                        if (tab == 3) requestStockExit { tab = 1 } else tab = 1
+                    }, R.drawable.ic_nav_programs, "Programmes")
+                    BottomNavItem(tab == 2, {
+                        if (tab == 3) requestStockExit { tab = 2 } else tab = 2
+                    }, R.drawable.ic_nav_cats, "Chats")
+                    BottomNavItem(tab == 3, { tab = 3 }, R.drawable.ic_nav_food, "Alimentation")
+                }
             }
         },
         floatingActionButton = {
@@ -217,25 +258,24 @@ fun App(openEntry: MutableState<String?>) {
 
             else -> FoodManagementScreen(
                 products = state.products.filter { !it.deleted },
-                foodPatterns = state.foodPatterns.filter { !it.deleted },
                 kibblePackages = state.kibblePackages.filterNot { it.deleted },
                 cats = cats,
                 stockSettings = state.stockSettings,
                 modifier = mod,
-                onSaveProduct = {
-                    Store.upsertProduct(it)
-                    Planner.afterChange(ctx)
-                },
-                onDeleteProduct = {
-                    Store.deleteProduct(it)
-                    Planner.afterChange(ctx)
-                },
-                onSavePattern = {
-                    Store.upsertFoodPattern(it)
-                    Planner.afterChange(ctx)
-                },
-                onDeletePattern = {
-                    Store.deleteFoodPattern(it)
+                stockDraft = stockDraft,
+                managingStocks = managingStocks,
+                onManagingStocksChange = { managingStocks = it },
+                onRequestStockExit = requestStockExit,
+                onStockDraftChange = { stockDraft = it },
+                onConfirmStockUpdate = { updatedProducts ->
+                    val currentProducts = state.products.associateBy { it.id }
+                    updatedProducts.forEach { product ->
+                        if (currentProducts[product.id] != product) {
+                            if (product.deleted) Store.deleteProduct(product.id)
+                            else Store.upsertProduct(product)
+                        }
+                    }
+                    stockDraft = null
                     Planner.afterChange(ctx)
                 },
                 onSaveKibblePackage = {
@@ -254,6 +294,37 @@ fun App(openEntry: MutableState<String?>) {
         }
     }
 
+    if (showDiscardStockConfirmation) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = {
+                showDiscardStockConfirmation = false
+                pendingStockExitAction = null
+            },
+            title = { Text("Modifications non enregistrées") },
+            text = { Text("Le stock a été modifié. Quitter sans enregistrer ces changements ?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        stockDraft = null
+                        managingStocks = false
+                        showDiscardStockConfirmation = false
+                        val onExit = pendingStockExitAction
+                        pendingStockExitAction = null
+                        onExit?.invoke()
+                    },
+                ) { Text("Quitter sans enregistrer") }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDiscardStockConfirmation = false
+                        pendingStockExitAction = null
+                    },
+                ) { Text("Continuer") }
+            },
+        )
+    }
+
     // ----- Fenêtres -----
 
     if (showNewPlan) {
@@ -261,6 +332,7 @@ fun App(openEntry: MutableState<String?>) {
             cats = cats,
             products = state.products.filter { !it.deleted },
             foodPatterns = state.foodPatterns,
+            stockSettings = state.stockSettings,
             initial = null,
             onSave = {
                 Store.upsertPlan(it)
@@ -278,6 +350,7 @@ fun App(openEntry: MutableState<String?>) {
             cats = cats,
             products = state.products.filter { !it.deleted },
             foodPatterns = state.foodPatterns,
+            stockSettings = state.stockSettings,
             initial = planToEdit,
             onSave = {
                 Store.upsertPlan(it)
@@ -423,6 +496,7 @@ fun App(openEntry: MutableState<String?>) {
 @Composable
 fun AppHeader(serverEnabled: Boolean, syncStatus: String, onSync: () -> Unit, onSettings: () -> Unit) {
     val c = MaterialTheme.colorScheme
+    val isDisconnected = serverEnabled && syncStatus == "Serveur injoignable"
     Box(
         Modifier
             .fillMaxWidth()
@@ -431,12 +505,12 @@ fun AppHeader(serverEnabled: Boolean, syncStatus: String, onSync: () -> Unit, on
         Row(
             Modifier
                 .statusBarsPadding()
-                .padding(start = 20.dp, end = 8.dp, top = 10.dp, bottom = 14.dp),
+                .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
                 Modifier
-                    .size(42.dp)
+                    .size(36.dp)
                     .background(c.primary, CircleShape),
                 contentAlignment = Alignment.Center,
             ) {
@@ -444,14 +518,14 @@ fun AppHeader(serverEnabled: Boolean, syncStatus: String, onSync: () -> Unit, on
                     painterResource(R.drawable.ic_logo_mark),
                     contentDescription = null,
                     tint = c.onPrimary,
-                    modifier = Modifier.size(34.dp),
+                    modifier = Modifier.size(29.dp),
                 )
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     stringResource(R.string.app_name),
-                    style = MaterialTheme.typography.titleLarge,
+                    style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = c.onPrimaryContainer,
                 )
@@ -459,13 +533,17 @@ fun AppHeader(serverEnabled: Boolean, syncStatus: String, onSync: () -> Unit, on
                     Text(
                         syncStatus,
                         style = MaterialTheme.typography.bodySmall,
-                        color = c.onSurfaceVariant,
+                        color = if (isDisconnected) c.error else c.onSurfaceVariant,
                     )
                 }
             }
             if (serverEnabled) {
                 IconButton(onClick = onSync) {
-                    Icon(painterResource(R.drawable.ic_action_refresh), contentDescription = "Synchroniser", tint = c.onPrimaryContainer)
+                    Icon(
+                        painterResource(if (isDisconnected) R.drawable.ic_action_wifi_off else R.drawable.ic_action_refresh),
+                        contentDescription = if (isDisconnected) "Serveur déconnecté" else "Synchroniser",
+                        tint = if (isDisconnected) c.error else c.onPrimaryContainer,
+                    )
                 }
             }
             IconButton(onClick = onSettings) {
@@ -475,22 +553,43 @@ fun AppHeader(serverEnabled: Boolean, syncStatus: String, onSync: () -> Unit, on
     }
 }
 
-/** Un onglet de la barre du bas : icône de la famille + libellé sur une ligne. */
+/** Un onglet de la barre du bas : icône + libellé, sans risque de débordement. */
 @Composable
-private fun RowScope.NavTab(selected: Boolean, onClick: () -> Unit, icon: Int, label: String) {
-    NavigationBarItem(
-        selected = selected,
-        onClick = onClick,
-        icon = { Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(24.dp)) },
-        label = {
+private fun RowScope.BottomNavItem(selected: Boolean, onClick: () -> Unit, icon: Int, label: String) {
+    val background = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    val contentColor = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+
+    Box(
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxHeight()
+            .clip(RoundedCornerShape(16.dp))
+            .background(background)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                painterResource(icon),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = contentColor,
+            )
+            Spacer(Modifier.height(2.dp))
             Text(
                 label,
                 maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
                 style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
+                fontWeight = FontWeight.SemiBold,
+                color = contentColor,
+                textAlign = TextAlign.Center,
             )
-        },
-    )
+        }
+    }
 }
 
 /** Icône + texte à l'intérieur d'un bouton. */
@@ -506,9 +605,9 @@ private fun ButtonLabel(icon: Int, text: String) {
 @Composable
 private fun FoodCategoryLabel(icon: Int, text: String) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(17.dp))
-        Spacer(Modifier.width(4.dp))
-        Text(text, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+        Icon(painterResource(icon), contentDescription = null, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.width(6.dp))
+        Text(text, style = MaterialTheme.typography.titleSmall, maxLines = 1)
     }
 }
 
@@ -606,14 +705,49 @@ fun CatsLine(cats: List<Cat>) {
 }
 
 @Composable
-fun PateAvatar(key: String, emoji: String? = null) {
+fun FoodIcon(
+    kind: String,
+    iconColor: String,
+    fallback: String = pateEmoji(kind),
+    size: Dp = 22.dp,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    val resourceName = when (kind) {
+        "poulet" -> "ic_food_chicken"
+        "boeuf" -> "ic_food_beef"
+        "saumon" -> "ic_food_salmon"
+        else -> null
+    }
+    val iconId = remember(resourceName) {
+        resourceName?.let { context.resources.getIdentifier(it, "drawable", context.packageName) } ?: 0
+    }
+    val tint = foodIconColor(iconColor, MaterialTheme.colorScheme.primary)
+    if (iconId != 0) {
+        Icon(
+            painterResource(iconId),
+            contentDescription = null,
+            modifier = modifier.size(size),
+            tint = tint,
+        )
+    } else {
+        Text(fallback, modifier = modifier, fontSize = (size.value * 0.9f).sp)
+    }
+}
+
+fun foodIconColor(value: String, fallback: Color): Color =
+    runCatching { Color(android.graphics.Color.parseColor(value)) }.getOrDefault(fallback)
+
+@Composable
+fun PateAvatar(key: String, emoji: String? = null, iconColor: String? = null) {
+    val tint = foodIconColor(iconColor ?: defaultFoodIconColor(key), MaterialTheme.colorScheme.primary)
     Box(
         Modifier
             .size(46.dp)
-            .background(pateColor(key).copy(alpha = 0.25f), CircleShape),
+            .background(tint.copy(alpha = 0.25f), CircleShape),
         contentAlignment = Alignment.Center,
     ) {
-        Text(emoji ?: pateEmoji(key), fontSize = 22.sp)
+        FoodIcon(key, iconColor ?: defaultFoodIconColor(key), emoji ?: pateEmoji(key), 24.dp)
     }
 }
 
@@ -626,6 +760,7 @@ fun MealCard(
     now: Long,
     onOpen: ((String) -> Unit)?,
     onSkip: ((String) -> Unit)?,
+    compact: Boolean = false,
 ) {
     val e = occ.entry
     val pending = e != null && e.status == Status.PENDING
@@ -635,11 +770,35 @@ fun MealCard(
     val shownPate = if (done && e != null) e.givenPate.ifEmpty { occ.pate } else occ.pate
     val shownQty = if (done && e != null) e.givenQty else occ.qty
     val product = products.firstOrNull { it.id == occ.productId }
+    val displayedQty = if (done && product != null &&
+        Regex("""^\s*\d+(?:[.,]\d+)?\s*$""").matches(shownQty)
+    ) {
+        val quantityValue = shownQty.trim().replace(',', '.').toBigDecimalOrNull()
+        val productWeight = product.weight.trim().replace(',', '.').toBigDecimalOrNull()
+        if (quantityValue != null && productWeight != null && quantityValue.compareTo(productWeight) == 0) {
+            "${shownQty.trim()} g"
+        } else {
+            shownQty
+        }
+    } else {
+        shownQty
+    }
     val shownFoodName = if (done && e != null) e.givenFoodTypeName.ifEmpty { occ.foodTypeName }
         else e?.foodTypeName?.ifEmpty { occ.foodTypeName } ?: occ.foodTypeName
     val shownFoodEmoji = if (done && e != null) e.givenFoodTypeEmoji.ifEmpty { occ.foodTypeEmoji }
         else e?.foodTypeEmoji?.ifEmpty { occ.foodTypeEmoji } ?: occ.foodTypeEmoji
+    val displayedProductWeight = product?.weight?.takeIf { weight ->
+        !done && weight.isNotBlank()
+    }
     val who = cats.filter { it.id in occ.catIds }
+    val allocationWarning = e?.foodAllocations?.let { allocations ->
+        when {
+            allocations.any { !it.inStock } -> "Stock insuffisant pour un ou plusieurs chats."
+            allocations.any { it.lowStock } -> "Stock bas pour un ou plusieurs chats."
+            allocations.any { it.stockWarning } -> "Stock à surveiller pour un ou plusieurs chats."
+            else -> null
+        }
+    }
 
     val clickable = onOpen != null && e != null && !pending
     Card(
@@ -653,63 +812,45 @@ fun MealCard(
             .clip(MaterialTheme.shapes.large)
             .then(if (clickable) Modifier.clickable { onOpen?.invoke(occ.id) } else Modifier),
     ) {
-        Row(Modifier.padding(14.dp)) {
-            PateAvatar(product?.pateKey ?: shownPate, shownFoodEmoji.ifEmpty { null })
-            Spacer(Modifier.width(12.dp))
-            Column(Modifier.weight(1f)) {
-                Text(
-                    "${Fmt.date(occ.at)} · ${Fmt.time(occ.at)}",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    (product?.let {
-                        "${pateEmoji(it.pateKey)} ${it.name} · ${it.brand} · ${it.packPrice} €/sachet" +
-                            it.weight.takeIf { weight -> weight.isNotBlank() }?.let { weight -> " · $weight g" }.orEmpty()
+        if (compact) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(10.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(verticalAlignment = Alignment.Top) {
+                    PateAvatar(
+                        product?.pateKey ?: shownPate,
+                        shownFoodEmoji.ifEmpty { null },
+                        product?.iconColor,
+                    )
+                    Spacer(Modifier.width(10.dp))
+                    Column(Modifier.weight(1.1f)) {
+                        Text(
+                            "${Fmt.date(occ.at)} · ${Fmt.time(occ.at)}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                        )
+                        if (who.isNotEmpty()) {
+                            Spacer(Modifier.height(4.dp))
+                            CatsLine(who)
+                        }
                     }
+                }
+                Text(
+                    (product?.let { "${it.name} · ${it.packagingLabel.lowercase()}" }
                         ?: shownFoodName.takeIf { it.isNotBlank() }?.let { name ->
                             "${shownFoodEmoji.ifEmpty { pateEmoji(shownPate) }} $name"
                         }
-                        ?: pateLabel(shownPate)) + if (shownQty.isNotBlank()) " · $shownQty" else "",
-                    style = MaterialTheme.typography.bodyLarge,
+                        ?: pateLabel(shownPate)) +
+                        if (displayedQty.isNotBlank()) " · $displayedQty" else "",
+                    style = MaterialTheme.typography.bodySmall,
                 )
-                if (who.isNotEmpty()) {
-                    Spacer(Modifier.height(6.dp))
-                    CatsLine(who)
-                }
-                if (done && e != null) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "✓ Donné à ${Fmt.time(e.doneAt)}" +
-                            if (e.givenPate.isNotEmpty() && e.givenPate != e.pate)
-                                " (prévu : ${e.foodTypeName.ifEmpty { pateLabel(e.pate) }})" else "",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = DoneColor,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
-                if (skipped) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "⏭ Repas passé (rien donné)",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (e?.deleted == true) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Encodage supprimé · tu peux le saisir à nouveau",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
                 if (e != null && e.note.isNotBlank()) {
-                    Spacer(Modifier.height(4.dp))
                     Text(e.note, style = MaterialTheme.typography.bodyMedium)
                 }
                 if (e != null && e.photo.isNotEmpty()) {
-                    Spacer(Modifier.height(8.dp))
                     PhotoImage(
                         e.photo,
                         Modifier
@@ -719,19 +860,118 @@ fun MealCard(
                     )
                 }
                 if (pending && e != null && onOpen != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        if (onSkip != null) {
+                            TextButton(onClick = { onSkip(e.id) }, modifier = Modifier.height(48.dp)) {
+                                Text("Passer")
+                            }
+                        }
+                        Spacer(Modifier.weight(1f))
                         Button(onClick = { onOpen(e.id) }, modifier = Modifier.height(48.dp)) {
                             Text(if (e.deleted) "Encoder à nouveau" else if (overdue) "Encoder" else "Donné")
-                        }
-                        if (onSkip != null) {
-                            TextButton(onClick = { onSkip(e.id) }, modifier = Modifier.height(48.dp)) { Text("Passer") }
                         }
                     }
                 }
             }
+        } else {
+            Row(Modifier.padding(14.dp)) {
+                PateAvatar(
+                    product?.pateKey ?: shownPate,
+                    shownFoodEmoji.ifEmpty { null },
+                    product?.iconColor,
+                )
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "${Fmt.date(occ.at)} · ${Fmt.time(occ.at)}",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        (product?.let {
+                            "${it.name} · ${it.brand} · ${it.packPrice} €/${it.packagingLabel.lowercase()}" +
+                                displayedProductWeight?.let { weight -> " · $weight g" }.orEmpty()
+                        }
+                            ?: shownFoodName.takeIf { it.isNotBlank() }?.let { name ->
+                                "${shownFoodEmoji.ifEmpty { pateEmoji(shownPate) }} $name"
+                            }
+                            ?: pateLabel(shownPate)) + if (displayedQty.isNotBlank()) " · $displayedQty" else "",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    if (who.isNotEmpty()) {
+                        Spacer(Modifier.height(6.dp))
+                        CatsLine(who)
+                    }
+                    if (pending && allocationWarning != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            allocationWarning,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (allocationWarning.startsWith("Stock à surveiller")) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                    }
+                    if (done && e != null) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "✓ Donné à ${Fmt.time(e.doneAt)}" +
+                                if (e.givenPate.isNotEmpty() && e.givenPate != e.pate)
+                                    " (prévu : ${e.foodTypeName.ifEmpty { pateLabel(e.pate) }})" else "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = DoneColor,
+                            fontWeight = FontWeight.Medium,
+                        )
+                    }
+                    if (skipped) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "⏭ Repas passé (rien donné)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (e?.deleted == true) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "Encodage supprimé · tu peux le saisir à nouveau",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (e != null && e.note.isNotBlank()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(e.note, style = MaterialTheme.typography.bodyMedium)
+                    }
+                    if (e != null && e.photo.isNotEmpty()) {
+                        Spacer(Modifier.height(8.dp))
+                        PhotoImage(
+                            e.photo,
+                            Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(MaterialTheme.shapes.medium),
+                        )
+                    }
+                    if (pending && e != null && onOpen != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { onOpen(e.id) }, modifier = Modifier.height(48.dp)) {
+                                Text(if (e.deleted) "Encoder à nouveau" else if (overdue) "Encoder" else "Donné")
+                            }
+                            if (onSkip != null) {
+                                TextButton(onClick = { onSkip(e.id) }, modifier = Modifier.height(48.dp)) {
+                                    Text("Passer")
+                                }
+                            }
+                        }
+                        }
+                    }
+            }
         }
-    }
+}
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -768,6 +1008,29 @@ fun HomeScreen(
     }
     val byDay = remember(calendarOccs) {
         calendarOccs.groupBy { Instant.ofEpochMilli(it.at).atZone(zone).toLocalDate() }
+    }
+    val noFoodDates = remember(state, month, activeSelectedCatId, minute) {
+        val depletionDates = Planner.stockDepletionDates(
+            state,
+            today,
+            month.atEndOfMonth(),
+            now,
+        )
+        val catsWithPlans = state.plans
+            .filter { !it.deleted && it.active }
+            .flatMap { it.catIds }
+            .distinct()
+            .filter { catId -> cats.any { it.id == catId } }
+            .filter { activeSelectedCatId == null || it == activeSelectedCatId }
+        val depletionDatesToConsider = catsWithPlans.mapNotNull { depletionDates[it] }
+        if (catsWithPlans.isEmpty() || depletionDatesToConsider.size != catsWithPlans.size) {
+            emptySet()
+        } else {
+            (1..month.lengthOfMonth())
+                .map { month.atDay(it) }
+                .filter { date -> depletionDatesToConsider.all { !date.isBefore(it) } }
+                .toSet()
+        }
     }
     val overdue = remember(state, minute) {
         state.entries
@@ -820,6 +1083,8 @@ fun HomeScreen(
                 month = month,
                 today = today,
                 byDay = byDay,
+                products = products,
+                noFoodDates = noFoodDates,
                 selected = selected,
                 cats = cats,
                 selectedCatId = activeSelectedCatId,
@@ -865,7 +1130,7 @@ fun HomeScreen(
                 }
             } else {
                 items(upcoming, key = { "u_" + it.id }) { o ->
-                    MealCard(o, cats, products, now, onOpen, onSkip)
+                    MealCard(o, cats, products, now, onOpen, onSkip, compact = true)
                 }
             }
         }
@@ -922,6 +1187,8 @@ fun CalendarCard(
     month: YearMonth,
     today: LocalDate,
     byDay: Map<LocalDate, List<Occ>>,
+    products: List<FoodProduct>,
+    noFoodDates: Set<LocalDate>,
     selected: LocalDate?,
     cats: List<Cat>,
     selectedCatId: String?,
@@ -992,7 +1259,16 @@ fun CalendarCard(
                         ) {
                             if (n in 1..days) {
                                 val date = month.atDay(n)
-                                DayCell(date, today, selected, byDay[date].orEmpty(), now, onSelect)
+                                DayCell(
+                                    date,
+                                    today,
+                                    selected,
+                                    byDay[date].orEmpty(),
+                                    products,
+                                    date in noFoodDates,
+                                    now,
+                                    onSelect,
+                                )
                             }
                         }
                     }
@@ -1010,6 +1286,8 @@ fun CalendarCard(
                 LegendDot(c.error, "à encoder")
                 Spacer(Modifier.width(14.dp))
                 LegendDot(c.primary.copy(alpha = 0.55f), "prévu")
+                Spacer(Modifier.width(14.dp))
+                LegendDot(c.outlineVariant, "stock épuisé")
             }
         }
     }
@@ -1067,6 +1345,8 @@ private fun DayCell(
     today: LocalDate,
     selected: LocalDate?,
     occs: List<Occ>,
+    products: List<FoodProduct>,
+    noFood: Boolean,
     now: Long,
     onSelect: (LocalDate) -> Unit,
 ) {
@@ -1076,7 +1356,9 @@ private fun DayCell(
     var m = Modifier
         .size(width = 42.dp, height = 52.dp)
         .clip(RoundedCornerShape(14.dp))
-    if (isSel) m = m.background(c.primaryContainer)
+    if (noFood) m = m.background(c.surfaceVariant.copy(alpha = 0.6f), RoundedCornerShape(14.dp))
+    else if (isSel) m = m.background(c.primaryContainer)
+    if (noFood && isSel) m = m.border(1.5.dp, c.primary, RoundedCornerShape(14.dp))
     if (isToday) m = m.border(1.5.dp, c.primary, RoundedCornerShape(14.dp))
     m = m.clickable { onSelect(date) }
 
@@ -1089,11 +1371,16 @@ private fun DayCell(
             date.dayOfMonth.toString(),
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (isToday || isSel) FontWeight.Bold else FontWeight.Normal,
-            color = if (isSel) c.onPrimaryContainer else c.onSurface,
+            color = when {
+                isSel -> c.onPrimaryContainer
+                noFood -> c.onSurfaceVariant.copy(alpha = 0.65f)
+                else -> c.onSurface
+            },
         )
         Spacer(Modifier.height(3.dp))
         if (occs.isNotEmpty()) {
             val color = when {
+                noFood -> c.outlineVariant
                 occs.any { it.entry?.status == Status.PENDING && it.at <= now } -> c.error
                 occs.all { it.entry?.status == Status.DONE } -> DoneColor
                 occs.all { it.entry?.status == Status.SKIPPED } -> c.onSurfaceVariant.copy(alpha = 0.35f)
@@ -1107,17 +1394,36 @@ private fun DayCell(
                     .padding(horizontal = 5.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(
-                    if (occs.size == 1) {
-                        val meal = occs.first()
-                        val emoji = meal.entry?.takeIf { it.status == Status.DONE }
-                            ?.givenFoodTypeEmoji?.ifEmpty { meal.foodTypeEmoji } ?: meal.foodTypeEmoji
-                        emoji.ifEmpty { pateEmoji(meal.pate) }
-                    } else occs.size.toString(),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = Color.White,
-                    maxLines = 1,
-                )
+                if (occs.size == 1) {
+                    val meal = occs.first()
+                    val emoji = meal.entry?.takeIf { it.status == Status.DONE }
+                        ?.givenFoodTypeEmoji?.ifEmpty { meal.foodTypeEmoji } ?: meal.foodTypeEmoji
+                    val productId = meal.entry?.productId?.takeIf { it.isNotBlank() }
+                        ?: meal.entry?.foodAllocations?.firstOrNull()?.productId?.takeIf { it.isNotBlank() }
+                        ?: meal.productId
+                    val product = products.firstOrNull { it.id == productId }
+                    Box(
+                        Modifier
+                            .size(16.dp)
+                            .background(c.surface, CircleShape)
+                            .border(1.dp, c.onSurface, CircleShape),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        FoodIcon(
+                            product?.pateKey ?: meal.pate,
+                            product?.iconColor ?: defaultFoodIconColor(meal.pate),
+                            emoji.ifEmpty { pateEmoji(meal.pate) },
+                            11.dp,
+                        )
+                    }
+                } else {
+                    Text(
+                        occs.size.toString(),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White,
+                        maxLines = 1,
+                    )
+                }
             }
         } else Spacer(Modifier.height(16.dp))
     }
@@ -1181,8 +1487,15 @@ fun PlansScreen(
                                 listOfNotNull(
                                     product.name,
                                     product.brand.takeIf { it.isNotBlank() },
-                                    product.packPrice.takeIf { it.isNotBlank() }?.let { "$it €/sachet" },
+                                    product.packPrice.takeIf { it.isNotBlank() }
+                                        ?.let { "$it €/${product.packagingLabel.lowercase()}" },
                                     product.weight.takeIf { it.isNotBlank() }?.let { "$it g" },
+                                    "${product.servingsPerPackage} portion(s)/emballage",
+                                    product.catIds.takeIf { it.isNotEmpty() }?.let { ids ->
+                                        "Réservé à " + ids.mapNotNull { id ->
+                                            cats.firstOrNull { it.id == id }?.name
+                                        }.joinToString(", ")
+                                    },
                                 ).joinToString(" · ")
                             } ?: pattern?.let { foodPattern ->
                                 foodPattern.foodIds.mapNotNull { id ->
@@ -1221,15 +1534,16 @@ fun PlansScreen(
 @Composable
 private fun FoodManagementScreen(
     products: List<FoodProduct>,
-    foodPatterns: List<FoodPattern>,
     kibblePackages: List<KibblePackage>,
     cats: List<Cat>,
     stockSettings: StockSettings,
     modifier: Modifier,
-    onSaveProduct: (FoodProduct) -> Unit,
-    onDeleteProduct: (String) -> Unit,
-    onSavePattern: (FoodPattern) -> Unit,
-    onDeletePattern: (String) -> Unit,
+    stockDraft: List<FoodProduct>?,
+    managingStocks: Boolean,
+    onManagingStocksChange: (Boolean) -> Unit,
+    onRequestStockExit: (() -> Unit) -> Unit,
+    onStockDraftChange: (List<FoodProduct>) -> Unit,
+    onConfirmStockUpdate: (List<FoodProduct>) -> Unit,
     onSaveKibblePackage: (KibblePackage) -> Unit,
     onFinishKibblePackage: (KibblePackage) -> Unit,
     onDeleteKibblePackage: (String) -> Unit,
@@ -1237,12 +1551,35 @@ private fun FoodManagementScreen(
     var category by remember { mutableIntStateOf(0) }
     var showProductEditor by remember { mutableStateOf(false) }
     var editingProductId by remember { mutableStateOf<String?>(null) }
+    var showSachetBoxDialog by remember { mutableStateOf(false) }
     var showKibbleEditor by remember { mutableStateOf(false) }
     var editingKibbleId by remember { mutableStateOf<String?>(null) }
     var deleteKibbleId by remember { mutableStateOf<String?>(null) }
+    val draftProducts = stockDraft ?: products
+    val hasStockChanges = draftProducts.map { it.copy(updatedAt = 0L) } !=
+        products.map { it.copy(updatedAt = 0L) }
+    val visibleDraftProducts = draftProducts.filterNot { it.deleted }
+        .sortedWith(
+            compareBy<FoodProduct> { product ->
+                products.firstOrNull { it.id == product.id }?.putAside ?: product.putAside
+            }.thenBy { product ->
+                products.indexOfFirst { it.id == product.id }.takeIf { it >= 0 } ?: Int.MAX_VALUE
+            }.thenBy { it.name.lowercase() }
+        )
+    val orderedProducts = products.sortedWith(compareBy<FoodProduct> { it.putAside }.thenBy { it.name.lowercase() })
 
-    BackHandler(enabled = category == 1) {
-        category = 0
+    val updateDraftProduct: (FoodProduct) -> Unit = { updated ->
+        onStockDraftChange(
+            if (draftProducts.any { it.id == updated.id }) {
+                draftProducts.map { if (it.id == updated.id) updated else it }
+            } else {
+                draftProducts + updated
+            }
+        )
+    }
+
+    BackHandler(enabled = category != 0 || managingStocks) {
+        if (category != 0) category = 0 else onRequestStockExit { onManagingStocksChange(false) }
     }
 
     Column(modifier.fillMaxSize()) {
@@ -1254,94 +1591,103 @@ private fun FoodManagementScreen(
                 val selected = if (index == 0) category != 2 else category == 2
                 val target = if (index == 0) 0 else 2
                 val icon = R.drawable.ic_nav_food
+                val selectCategory = {
+                    if (target != category && managingStocks) {
+                        onRequestStockExit { category = target }
+                    } else {
+                        category = target
+                    }
+                }
                 if (selected) {
                     Button(
-                        onClick = { category = target },
+                        onClick = selectCategory,
                         modifier = Modifier.weight(1f).height(52.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp),
                     ) { FoodCategoryLabel(icon, label) }
                 } else {
                     OutlinedButton(
-                        onClick = { category = target },
+                        onClick = selectCategory,
                         modifier = Modifier.weight(1f).height(52.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp),
                     ) { FoodCategoryLabel(icon, label) }
                 }
             }
         }
-
         if (category == 0) {
+            Button(
+                onClick = {
+                    if (managingStocks) {
+                        onRequestStockExit { onManagingStocksChange(false) }
+                    } else {
+                        onManagingStocksChange(true)
+                    }
+                },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Text(if (managingStocks) "Voir les stocks" else "Gérer les stocks")
+            }
+        }
+
+        if (category == 0 && !managingStocks) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                item {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Button(
-                            onClick = {
-                                editingProductId = null
-                                showProductEditor = true
-                            },
-                            modifier = Modifier.weight(1.5f),
-                            contentPadding = PaddingValues(horizontal = 8.dp),
-                        ) {
-                            Text("Ajouter une nourriture", maxLines = 1)
-                        }
-                        OutlinedButton(
-                            onClick = { category = 1 },
-                            modifier = Modifier.weight(1f),
-                            contentPadding = PaddingValues(horizontal = 8.dp),
-                        ) {
-                            FoodCategoryLabel(R.drawable.ic_action_repeat, "Combinaisons")
-                        }
-                    }
-                }
                 if (products.isEmpty()) {
-                    item { EmptyState(R.drawable.ic_nav_food, "Ajoute une nourriture pour la retrouver dans tes programmes.") }
+                    item { EmptyState(R.drawable.ic_nav_food, "Aucun stock à afficher.") }
                 }
-                items(products, key = { it.id }) { product ->
+                items(orderedProducts, key = { it.id }) { product ->
                     Card(
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (product.putAside) Color(0xFF424242)
+                                else MaterialTheme.colorScheme.surfaceContainerHighest,
+                        ),
                         shape = MaterialTheme.shapes.large,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
                             Column(
-                                Modifier.weight(1f),
+                                Modifier.fillMaxWidth(),
                                 verticalArrangement = Arrangement.spacedBy(2.dp),
                             ) {
-                                Text("${pateEmoji(product.pateKey)} ${product.name}", fontWeight = FontWeight.Bold)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    FoodIcon(product.pateKey, product.iconColor, size = 20.dp)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(
+                                        product.name + if (product.putAside) " · mis de côté" else "",
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (product.putAside) Color(0xFFE0E0E0)
+                                            else MaterialTheme.colorScheme.onSurface,
+                                    )
+                                }
                                 Text(
                                     listOfNotNull(
                                         product.brand.takeIf { it.isNotBlank() },
-                                        product.packPrice.takeIf { it.isNotBlank() }?.let { "$it €/sachet" },
+                                        product.packPrice.takeIf { it.isNotBlank() }
+                                            ?.let { "$it €/${product.packagingLabel.lowercase()}" },
                                         product.weight.takeIf { it.isNotBlank() }?.let { "$it g" },
                                     ).joinToString(" · ").ifEmpty { "Nourriture de base" },
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    color = if (product.putAside) Color(0xFFBDBDBD)
+                                        else MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
                                 val stock = product.stockCount
+                                val portions = product.availableServings
                                 if (stock == null) {
                                     Text(
                                         "Stock non suivi",
                                         style = MaterialTheme.typography.labelMedium,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        color = if (product.putAside) Color(0xFFBDBDBD)
+                                            else MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 } else {
                                     val darkTheme = isSystemInDarkTheme()
-                                    val stockColor = when {
-                                        stock <= stockSettings.lowThreshold ->
+                                    val availablePortions = portions ?: 0L
+                                    val stockColor = if (product.putAside) Color(0xFFBDBDBD) else when {
+                                        availablePortions <= stockSettings.lowThreshold ->
                                             if (darkTheme) Color(0xFFFF5252) else Color(0xFFB71C1C)
-                                        stock <= stockSettings.warningThreshold -> Color(0xFFE58A24)
+                                        availablePortions <= stockSettings.warningThreshold -> Color(0xFFE58A24)
                                         else -> Color(0xFF438A55)
                                     }
                                     Row(
@@ -1354,49 +1700,34 @@ private fun FoodManagementScreen(
                                                 .background(stockColor, CircleShape),
                                         )
                                         Text(
-                                            "$stock " + (if (stock == 1) "sachet" else "sachets") + " · " + when {
-                                                stock <= stockSettings.lowThreshold -> "stock bas"
-                                                stock <= stockSettings.warningThreshold -> "à surveiller"
-                                                else -> "stock bon"
-                                            },
+                                            (if (product.packaging == "sachet") {
+                                                "$stock ${if (stock == 1) "sachet" else "sachets"}"
+                                            } else {
+                                                "$availablePortions " +
+                                                    (if (availablePortions == 1L) "portion" else "portions") +
+                                                    " · $stock ${product.packagingLabel.lowercase()}(s) fermé(s)"
+                                            }) +
+                                                (if (product.servingsPerPackage > 1 && product.openServings > 0) {
+                                                    " · emballage entamé (${product.openServings} portion(s))"
+                                                } else "") +
+                                                " · " +
+                                                if (product.putAside) "mis de côté" else when {
+                                                    availablePortions <= stockSettings.lowThreshold -> "stock bas"
+                                                    availablePortions <= stockSettings.warningThreshold -> "à surveiller"
+                                                    else -> "stock bon"
+                                                },
                                             style = MaterialTheme.typography.labelMedium,
                                             color = stockColor,
                                             fontWeight = FontWeight.SemiBold,
                                         )
                                     }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        TextButton(
-                                            onClick = { onSaveProduct(product.copy(stockCount = (stock - 1).coerceAtLeast(0))) },
-                                            enabled = stock > 0,
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                        ) { Text("−", fontSize = 20.sp) }
-                                        TextButton(
-                                            onClick = { onSaveProduct(product.copy(stockCount = stock + 1)) },
-                                            enabled = stock < Int.MAX_VALUE,
-                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
-                                        ) { Text("+", fontSize = 20.sp) }
-                                    }
-                                }
+                }
                             }
-                            TextButton(
-                                onClick = {
-                                    editingProductId = product.id
-                                    showProductEditor = true
-                                },
-                            ) { Text("Modifier") }
                         }
                     }
                 }
             }
-        } else if (category == 1) {
-            FoodSettingsScreen(
-                patterns = foodPatterns,
-                modifier = Modifier.weight(1f),
-                products = products,
-                onSavePattern = onSavePattern,
-                onDeletePattern = onDeletePattern,
-            )
-        } else {
+        } else if (category == 2) {
             LazyColumn(
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
@@ -1404,7 +1735,7 @@ private fun FoodManagementScreen(
             ) {
                 item {
                     Text(
-                        "Ajoute chaque paquet ouvert. Termine-le lorsqu’il est vide pour calculer sa durée réelle.",
+                        "Enregistre un paquet ouvert ou ajoute-le en attente pour le commencer plus tard.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -1422,68 +1753,71 @@ private fun FoodManagementScreen(
                     val duration = addedOn?.let {
                         if (durationEnd.isBefore(it)) 0 else (ChronoUnit.DAYS.between(it, durationEnd) + 1).toInt()
                     }
+                    val notStarted = addedOn == null
                     val currency = NumberFormat.getCurrencyInstance(Locale.forLanguageTag("fr-BE"))
                     Card(
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
                         shape = MaterialTheme.shapes.large,
                         modifier = Modifier.fillMaxWidth(),
                     ) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(
-                                        pack.brand.ifBlank { "Paquet de croquettes" },
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    if (pack.flavor.isNotBlank()) {
-                                        Text(pack.flavor, style = MaterialTheme.typography.bodyMedium)
-                                    }
-                                }
+                                Text(
+                                    listOf(pack.brand.ifBlank { "Paquet de croquettes" }, pack.flavor, pack.specialty)
+                                        .filter { it.isNotBlank() }
+                                        .joinToString(" · "),
+                                    modifier = Modifier.weight(1f),
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
                                 Spacer(Modifier.width(8.dp))
                                 Text(
                                     currency.format(pack.price.replace(',', '.').toDoubleOrNull() ?: 0.0),
-                                    style = MaterialTheme.typography.titleMedium,
+                                    style = MaterialTheme.typography.titleSmall,
                                     fontWeight = FontWeight.Bold,
                                 )
                             }
-                            if (pack.specialty.isNotBlank()) {
-                                Text(
-                                    pack.specialty,
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Column(Modifier.weight(1f)) {
-                                    Text("Ajout", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(
-                                        addedOn?.let { Fmt.dateLong(it) } ?: "Date inconnue",
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                                Column(Modifier.weight(1f)) {
-                                    Text("Durée", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    Text(
-                                        "${duration ?: "?"} jour${if (duration == 1) "" else "s"}${if (finishedOn == null) " · en cours" else ""}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                    )
-                                }
-                            }
+                            Text(
+                                "Début : ${addedOn?.let { Fmt.dateLong(it) } ?: "À commencer"} · " +
+                                    "Durée : " + if (notStarted) "En attente"
+                                    else "${duration ?: "?"} jour${if (duration == 1) "" else "s"}${if (finishedOn == null) " · en cours" else ""}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                             CatsLine(cats.filter { it.id in pack.catIds })
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 OutlinedButton(
-                                    onClick = { if (finishedOn == null) onFinishKibblePackage(pack) },
-                                    enabled = finishedOn == null,
+                                    onClick = {
+                                        if (notStarted) {
+                                            onSaveKibblePackage(
+                                                pack.copy(
+                                                    addedOn = LocalDate.now().toString(),
+                                                    updatedAt = System.currentTimeMillis(),
+                                                ),
+                                            )
+                                        } else if (finishedOn == null) {
+                                            onFinishKibblePackage(pack)
+                                        }
+                                    },
+                                    enabled = notStarted || finishedOn == null,
                                     modifier = Modifier.weight(1f),
                                     contentPadding = PaddingValues(horizontal = 4.dp),
                                 ) {
-                                    Text(if (finishedOn == null) "Terminer" else "Terminé", maxLines = 1)
+                                    Text(
+                                        when {
+                                            notStarted -> "Commencer"
+                                            finishedOn == null -> "Terminer"
+                                            else -> "Terminé"
+                                        },
+                                        maxLines = 1,
+                                    )
                                 }
                                 OutlinedButton(
                                     onClick = {
@@ -1512,19 +1846,219 @@ private fun FoodManagementScreen(
                     }
                 }
             }
+        } else {
+                LazyColumn(
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                item {
+                                    Text(
+                                        "Ajuste les quantités, ajoute une nourriture ou mets-en de côté. Confirme pour recalculer une seule fois les prochains repas.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                    Row(
+                                        Modifier.fillMaxWidth().padding(top = 6.dp),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                editingProductId = null
+                                                showProductEditor = true
+                                            },
+                                            modifier = Modifier.weight(1f).height(40.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp),
+                                        ) { Text("Ajouter nourriture", maxLines = 1) }
+                                        OutlinedButton(
+                                            onClick = { showSachetBoxDialog = true },
+                                            modifier = Modifier.weight(1f).height(40.dp),
+                                            contentPadding = PaddingValues(horizontal = 6.dp),
+                                        ) { Text("Boîte de sachets", maxLines = 1) }
+                                    }
+                                    Button(
+                                        onClick = {
+                                            onConfirmStockUpdate(draftProducts)
+                                            onManagingStocksChange(false)
+                                        },
+                                        enabled = hasStockChanges,
+                                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(40.dp),
+                                        contentPadding = PaddingValues(horizontal = 6.dp),
+                                    ) { Text("Actualiser le stock", maxLines = 1) }
+                                }
+                                if (visibleDraftProducts.isEmpty()) {
+                                    item { EmptyState(R.drawable.ic_nav_food, "Aucune nourriture enregistrée.") }
+                                }
+                                items(visibleDraftProducts, key = { it.id }) { product ->
+                                    val available = product.availableServings ?: 0L
+                                    Card(
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = if (product.putAside) Color(0xFF424242)
+                                                else MaterialTheme.colorScheme.surfaceContainerHighest,
+                                        ),
+                                        shape = MaterialTheme.shapes.large,
+                                    ) {
+                                        Column(
+                                            Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp),
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Column(
+                                                    Modifier.weight(1f),
+                                                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                                        FoodIcon(product.pateKey, product.iconColor, size = 20.dp)
+                                                        Spacer(Modifier.width(6.dp))
+                                                        Text(
+                                                            product.name,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (product.putAside) Color(0xFFE0E0E0)
+                                                                else MaterialTheme.colorScheme.onSurface,
+                                                        )
+                                                    }
+                                                    Text(
+                                                        if (product.stockCount == null) "Stock non suivi"
+                                                        else (if (product.packaging == "sachet") {
+                                                            "${product.stockCount} " +
+                                                                if (product.stockCount == 1) "sachet" else "sachets"
+                                                        } else {
+                                                            "$available portion(s) · ${product.stockCount} emballage(s) fermé(s)"
+                                                        }) + if (product.servingsPerPackage > 1 && product.openServings > 0) {
+                                                            " · emballage entamé (${product.openServings} portion(s))"
+                                                        } else "",
+                                                        style = MaterialTheme.typography.bodySmall,
+                                                        color = if (product.putAside) Color(0xFFBDBDBD)
+                                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    )
+                                                }
+                                                Column(
+                                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                                    verticalArrangement = Arrangement.spacedBy(0.dp),
+                                                ) {
+                                                    TextButton(
+                                                        onClick = {
+                                                            updateDraftProduct(
+                                                                product.withStockPortionDelta(1, System.currentTimeMillis())
+                                                            )
+                                                        },
+                                                        enabled = product.stockCount != null &&
+                                                            available < Int.MAX_VALUE.toLong() * product.servingsPerPackage,
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                                        modifier = Modifier.height(32.dp),
+                                                    ) { Text("+", fontSize = 20.sp) }
+                                                    TextButton(
+                                                        onClick = {
+                                                            updateDraftProduct(
+                                                                product.withStockPortionDelta(-1, System.currentTimeMillis())
+                                                            )
+                                                        },
+                                                        enabled = product.stockCount != null && available > 0,
+                                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                                        modifier = Modifier.height(32.dp),
+                                                    ) { Text("−", fontSize = 20.sp) }
+                                                }
+                                            }
+                                            Row(
+                                                Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                            ) {
+                                                IconButton(
+                                                    onClick = {
+                                                        editingProductId = product.id
+                                                        showProductEditor = true
+                                                    },
+                                                    modifier = Modifier.size(36.dp),
+                                                ) {
+                                                    Icon(
+                                                        painterResource(R.drawable.ic_action_settings),
+                                                        contentDescription = "Modifier ${product.name}",
+                                                        tint = if (product.putAside) Color(0xFFBDBDBD)
+                                                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        modifier = Modifier.size(18.dp),
+                                                    )
+                                                }
+                                                if (product.stockCount == null) {
+                                                    TextButton(
+                                                        onClick = {
+                                                            editingProductId = product.id
+                                                            showProductEditor = true
+                                                        },
+                                                        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 0.dp),
+                                                        modifier = Modifier.height(36.dp),
+                                                    ) {
+                                                        Text("Configurer le stock", maxLines = 1)
+                                                    }
+                                                }
+                                                Spacer(Modifier.weight(1f))
+                                                Text(
+                                                    "Mettre de côté",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = if (product.putAside) Color(0xFFBDBDBD)
+                                                        else MaterialTheme.colorScheme.onSurfaceVariant,
+                                                )
+                                                Spacer(Modifier.width(8.dp))
+                                                Switch(
+                                                    checked = product.putAside,
+                                                    onCheckedChange = { putAside ->
+                                                        updateDraftProduct(
+                                                            product.copy(
+                                                                putAside = putAside,
+                                                                updatedAt = System.currentTimeMillis(),
+                                                            )
+                                                        )
+                                                    },
+                                                    modifier = Modifier
+                                                        .width(38.dp)
+                                                        .height(30.dp)
+                                                        .graphicsLayer(scaleX = 0.72f, scaleY = 0.72f),
+                                                )
+                                            }
+                                            if (product.putAside &&
+                                                products.firstOrNull { it.id == product.id }?.putAside != true
+                                            ) {
+                                                Text(
+                                                    "Sera grisé et déplacé en bas après confirmation.",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = Color(0xFFBDBDBD),
+                                                )
+                                            }
+                                        }
+                    }
+                }
+            }
         }
     }
 
     if (showProductEditor) {
         ProductCatalogDialog(
-            products = products,
+            products = draftProducts,
+            cats = cats,
+            stockSettings = stockSettings,
             initialProductId = editingProductId,
-            onSave = onSaveProduct,
-            onDelete = onDeleteProduct,
+            onSave = updateDraftProduct,
+            onDelete = { id ->
+                draftProducts.firstOrNull { it.id == id }?.let {
+                    updateDraftProduct(it.copy(deleted = true, updatedAt = System.currentTimeMillis()))
+                }
+            },
             onDismiss = {
                 showProductEditor = false
                 editingProductId = null
             },
+        )
+    }
+    if (showSachetBoxDialog) {
+        AddSachetBoxDialog(
+            products = draftProducts,
+            onAdd = { updates ->
+                onStockDraftChange(
+                    draftProducts.map { current ->
+                        updates.firstOrNull { it.id == current.id } ?: current
+                    } + updates.filter { added -> draftProducts.none { it.id == added.id } }
+                )
+            },
+            onDismiss = { showSachetBoxDialog = false },
         )
     }
     if (showKibbleEditor) {
@@ -1560,7 +2094,7 @@ private fun FoodManagementScreen(
 // Onglet "Chats" et détail d'un profil
 // ---------------------------------------------------------------------------------------------
 
-private data class FoodQuantity(val amount: Double, val isGrams: Boolean)
+private data class FoodQuantity(val amount: Double, val isGrams: Boolean, val isPortions: Boolean = false)
 private data class MonthlyFoodCost(
     val mealAmount: Double,
     val kibbleAmount: Double,
@@ -1586,6 +2120,7 @@ private fun parseFoodQuantity(value: String, product: FoodProduct?): FoodQuantit
     val productWeight = product?.weight?.replace(',', '.')?.toDoubleOrNull()
     return when {
         unit.startsWith("g") -> FoodQuantity(amount, true)
+        unit.startsWith("portion") -> FoodQuantity(amount, false, true)
         unit.isNotEmpty() -> FoodQuantity(amount, false)
         productWeight != null && kotlin.math.abs(amount - productWeight) < 0.0001 -> FoodQuantity(amount, true)
         else -> FoodQuantity(amount, false)
@@ -1596,12 +2131,21 @@ private fun gramsFor(quantity: String, product: FoodProduct?): Double? {
     val parsed = parseFoodQuantity(quantity, product) ?: return null
     if (parsed.isGrams) return parsed.amount
     val weight = product?.weight?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it > 0 } ?: return null
-    return parsed.amount * weight
+    val portionWeight = if (parsed.isPortions) {
+        weight / product.servingsPerPackage.coerceAtLeast(1)
+    } else {
+        weight
+    }
+    return parsed.amount * portionWeight
 }
 
 private fun costFor(quantity: String, product: FoodProduct?): Double? {
     val parsed = parseFoodQuantity(quantity, product) ?: return null
     val price = product?.packPrice?.replace(',', '.')?.toDoubleOrNull()?.takeIf { it >= 0 } ?: return null
+    if (parsed.isPortions) {
+        val servings = product?.servingsPerPackage?.coerceAtLeast(1) ?: return null
+        return parsed.amount * price / servings
+    }
     if (!parsed.isGrams) return parsed.amount * price
     val weight = product.weight.replace(',', '.').toDoubleOrNull()?.takeIf { it > 0 } ?: return null
     return parsed.amount / weight * price
@@ -1630,12 +2174,30 @@ private fun monthlyFoodCost(
         while (!date.isAfter(lastDay)) {
             if (!date.isBefore(start) && ChronoUnit.DAYS.between(start, date) % plan.everyDays.coerceAtLeast(1) == 0L) {
                 mealCount++
-                val product = plan.foodProductOn(date, patterns, products)
-                val mealCost = costFor(plan.qty, product)
+                val product = if (plan.autoAllocate) {
+                    val restricted = products.filter { !it.deleted && !it.putAside && catId in it.catIds }
+                    val eligible = if (restricted.isNotEmpty()) restricted else {
+                        products.filter { !it.deleted && !it.putAside && it.catIds.isEmpty() }
+                    }
+                    eligible.filter { it.availableServings != null }
+                        .maxByOrNull { it.availableServings ?: 0L }
+                } else {
+                    plan.foodProductOn(date, patterns, products)
+                }
+                val mealCost = if (plan.autoAllocate) {
+                    product?.let { item ->
+                        item.packPrice.replace(',', '.').toDoubleOrNull()
+                            ?.div(item.servingsPerPackage.coerceAtLeast(1))
+                    }
+                } else {
+                    costFor(plan.qty, product)
+                }
                 if (mealCost == null) {
                     unpriced++
                 } else {
-                    val catShare = mealCost / plan.catIds.distinct().size.coerceAtLeast(1)
+                    val catShare = if (plan.autoAllocate) mealCost else {
+                        mealCost / plan.catIds.distinct().size.coerceAtLeast(1)
+                    }
                     mealAmount += catShare
                     planAmount += catShare
                 }

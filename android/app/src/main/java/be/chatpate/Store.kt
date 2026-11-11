@@ -157,8 +157,19 @@ object Store {
     }
 
     fun upsertProduct(product: FoodProduct) {
-        val updated = product.copy(updatedAt = System.currentTimeMillis())
         mutate { state ->
+            val packaging = product.packaging.takeIf { it in setOf("sachet", "boite", "barquette") }
+                ?: "sachet"
+            val maxServings = FoodProduct.maxServings(packaging, state.stockSettings)
+            val servings = product.servingsPerPackage.coerceIn(1, maxServings)
+            val updated = product.copy(
+                stockCount = product.stockCount?.coerceAtLeast(0),
+                packaging = packaging,
+                servingsPerPackage = servings,
+                openServings = product.openServings.coerceIn(0, servings - 1),
+                catIds = product.catIds.distinct(),
+                updatedAt = System.currentTimeMillis(),
+            )
             val exists = state.products.any { it.id == updated.id }
             state.copy(products = if (exists) {
                 state.products.map { if (it.id == updated.id) updated else it }
@@ -304,24 +315,42 @@ object Store {
             val now = System.currentTimeMillis()
             val targetProductId = productId ?: e.productId
             val selectedTypeId = foodTypeId ?: e.givenFoodTypeId
+            val selectedCatIds = catIds ?: e.catIds
             val product = state.products.firstOrNull { it.id == targetProductId && !it.deleted }
                 ?: state.products.firstOrNull {
                     !it.deleted && (it.id == selectedTypeId || it.kind == selectedTypeId ||
                         it.id == givenPate || it.kind == givenPate)
                 }
-            val shouldTrack = e.status != Status.DONE || e.stockDeductedProductId.isNotEmpty()
+            val shouldTrack = e.status != Status.DONE || e.stockDeductedProductId.isNotEmpty() ||
+                e.stockDeductedPortions.isNotEmpty()
             var products = state.products
             var deductedProductId = e.stockDeductedProductId
             var deductedCount = e.stockDeductedCount
+            var deductedPortions = e.stockDeductedPortions
             if (shouldTrack) {
-                if (e.stockDeductedProductId.isNotEmpty() && e.stockDeductedCount > 0) {
-                    products = adjustStock(products, e.stockDeductedProductId, e.stockDeductedCount.toLong(), now)
+                products = restoreStockForEntry(products, e, now)
+                val requestedPortions = if (e.foodAllocations.isNotEmpty() && productId.isNullOrEmpty()) {
+                    e.foodAllocations
+                        .filter { it.catId in selectedCatIds && it.productId.isNotEmpty() }
+                        .groupingBy { it.productId }
+                        .fold(0) { count, allocation -> count + allocation.servings }
+                } else {
+                    val portionsPerCat = product?.let { stockUnits(givenQty.ifBlank { e.qty }, it) } ?: 0
+                    if (product == null || portionsPerCat == 0) emptyMap()
+                    else mapOf(product.id to portionsPerCat * selectedCatIds.size.coerceAtLeast(1))
                 }
-                deductedProductId = product?.id.orEmpty()
-                deductedCount = if (product?.stockCount != null) stockUnits(givenQty.ifBlank { e.qty }, product) else 0
-                if (deductedProductId.isNotEmpty() && deductedCount > 0) {
-                    products = adjustStock(products, deductedProductId, -deductedCount.toLong(), now)
-                }
+                deductedPortions = requestedPortions.mapNotNull { (productId, requested) ->
+                    val available = products.firstOrNull { it.id == productId }?.availableServings
+                        ?: return@mapNotNull null
+                    val consumed = minOf(requested.toLong(), available)
+                        .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                    if (consumed > 0) {
+                        products = adjustStockPortions(products, productId, -consumed.toLong(), now)
+                        productId to consumed
+                    } else null
+                }.toMap()
+                deductedProductId = ""
+                deductedCount = 0
             }
             val updatedEntry = e.copy(
                 status = Status.DONE,
@@ -331,7 +360,7 @@ object Store {
                 givenQty = givenQty,
                 note = note,
                 doneAt = doneAt,
-                catIds = catIds ?: e.catIds,
+                catIds = selectedCatIds,
                 photo = photo ?: e.photo,
                 productId = targetProductId,
                 givenFoodTypeId = foodTypeId ?: e.givenFoodTypeId,
@@ -343,6 +372,7 @@ object Store {
                 } ?: e.givenFoodTypeEmoji,
                 stockDeductedProductId = deductedProductId,
                 stockDeductedCount = deductedCount,
+                stockDeductedPortions = deductedPortions,
                 updatedAt = now,
             )
             state.copy(
@@ -366,6 +396,7 @@ object Store {
                 doneAt = now,
                 stockDeductedProductId = "",
                 stockDeductedCount = 0,
+                stockDeductedPortions = emptyMap(),
                 updatedAt = now,
             )
             state.copy(
@@ -407,6 +438,7 @@ object Store {
                 givenFoodTypeEmoji = "",
                 stockDeductedProductId = "",
                 stockDeductedCount = 0,
+                stockDeductedPortions = emptyMap(),
             )
             state.copy(
                 entries = state.entries.map { if (it.id == id) cleared else it },
@@ -437,6 +469,7 @@ object Store {
                 permanentlyDeleted = true,
                 stockDeductedProductId = "",
                 stockDeductedCount = 0,
+                stockDeductedPortions = emptyMap(),
             )
             state.copy(
                 entries = state.entries.map { if (it.id == id) removed else it },
@@ -551,14 +584,36 @@ object Store {
         )
     }
 
+    private fun adjustStockPortions(
+        products: List<FoodProduct>,
+        productId: String,
+        delta: Long,
+        updatedAt: Long,
+    ): List<FoodProduct> = products.map { product ->
+        if (product.id != productId || product.stockCount == null) product
+        else product.withStockPortionDelta(delta, updatedAt)
+    }
+
     private fun restoreStockForEntry(
         products: List<FoodProduct>,
         entry: Entry,
         updatedAt: Long,
-    ): List<FoodProduct> =
-        if (entry.stockDeductedProductId.isNotEmpty() && entry.stockDeductedCount > 0) {
-            adjustStock(products, entry.stockDeductedProductId, entry.stockDeductedCount.toLong(), updatedAt)
-        } else products
+    ): List<FoodProduct> {
+        var restored = products
+        if (entry.stockDeductedPortions.isNotEmpty()) {
+            entry.stockDeductedPortions.forEach { (productId, portions) ->
+                restored = adjustStockPortions(restored, productId, portions.toLong(), updatedAt)
+            }
+        } else if (entry.stockDeductedProductId.isNotEmpty() && entry.stockDeductedCount > 0) {
+            restored = adjustStock(
+                restored,
+                entry.stockDeductedProductId,
+                entry.stockDeductedCount.toLong(),
+                updatedAt,
+            )
+        }
+        return restored
+    }
 
     private fun stockUnits(quantity: String, product: FoodProduct): Int {
         val match = Regex("""^\s*(\d+(?:[.,]\d+)?)\s*([a-zA-ZÀ-ÿ]*)""").find(quantity)
@@ -569,7 +624,12 @@ object Store {
         val weight = product.weight.replace(',', '.').toDoubleOrNull()
         val isGrams = unit.startsWith("g") || (unit.isEmpty() && weight != null && amount == weight)
         val units = if (isGrams) {
-            if (weight != null && weight > 0.0) kotlin.math.ceil(amount / weight) else 1.0
+            val portionWeight = weight?.div(
+                product.servingsPerPackage.coerceAtLeast(1),
+            )
+            if (portionWeight != null && portionWeight > 0.0) {
+                kotlin.math.ceil(amount / portionWeight)
+            } else 1.0
         } else kotlin.math.ceil(amount)
         return units.coerceIn(0.0, Int.MAX_VALUE.toDouble()).toInt()
     }

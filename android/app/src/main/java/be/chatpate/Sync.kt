@@ -92,7 +92,7 @@ object Sync {
             _status.value = "Synchronisé à " + LocalTime.now().format(DateTimeFormatter.ofPattern("HH:mm"))
             return true
         } catch (e: Exception) {
-            _status.value = "Serveur injoignable (mode hors-ligne)"
+            _status.value = "Serveur injoignable"
             return false
         } finally {
             conn?.disconnect()

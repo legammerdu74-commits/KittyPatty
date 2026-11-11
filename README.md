@@ -2,7 +2,7 @@
 
 **Les repas des chats, sans devoir s’en souvenir à chaque fois.** KittyPatty aide à planifier les repas, suivre ce qui a été servi et garder un œil sur le budget. L’application Android fonctionne seule ; un petit serveur facultatif ajoute la synchronisation et une interface pour ordinateur.
 
-> 🧪 **Version actuelle : 0.12 bêta** — [Télécharger l’APK](https://github.com/legammerdu74-commits/KittyPatty/releases/tag/v0.12). L’APK est une version de test signée en mode débogage.
+> 🧪 **Version actuelle : 0.20 bêta** — [Télécharger l’APK](https://github.com/legammerdu74-commits/KittyPatty/releases/tag/v0.20). L’APK est une version de test signée en mode débogage.
 
 ## 📱 L’application
 
@@ -10,7 +10,9 @@
 - **Rappels** : reçois une notification à l’heure prévue. Marque le repas comme donné directement depuis la notification ou encode ce qui a réellement été servi, avec quantité, note et photo facultative.
 - **Calendrier et historique** : visualise les repas du mois, filtre le calendrier par chat, retrouve les repas donnés et corrige ou supprime un encodage. Les repas futurs supprimés peuvent être remis au programme.
 - **Profils de chats** : ajoute une photo et une couleur à chaque profil, puis consulte son historique, les quantités enregistrées et son estimation de coût pour le mois civil.
-- **Catalogue alimentaire** : enregistre les nourritures avec leur marque, leur prix et leur poids. Suis le nombre de sachets disponibles ; le stock baisse quand un repas est marqué comme donné, et remonte si tu annules ou supprimes son encodage. Les seuils orange et rouge se règlent dans les paramètres et s’appliquent à toutes les nourritures. Réutilise les produits dans les programmes ou compose des séquences comme « bœuf → poulet ».
+- **Catalogue alimentaire** : enregistre les nourritures avec leur marque, leur prix et leur poids. Suis le nombre de sachets disponibles ; ajoute rapidement une boîte contenant plusieurs goûts et répartis son prix entre les sachets. Le stock baisse quand un repas est marqué comme donné, et remonte si tu annules ou supprimes son encodage. Les seuils orange et rouge se règlent dans les paramètres et s’appliquent à toutes les nourritures. Réutilise les produits dans les programmes ou compose des séquences comme « bœuf → poulet ».
+- **Planification selon le stock** : les repas peuvent être planifiés au-delà de deux semaines selon les aliments suivis. Le calendrier indique les jours à partir desquels le stock devrait être épuisé.
+- **Boîtes et barquettes** : configure le nombre de portions par emballage et suis les portions restantes d’un emballage entamé.
 - **Suivi des croquettes** : note la marque, le goût, la spécificité (par ex. Urinary ou Senior), le prix, la date d’ajout/ouverture et les chats qui partagent le paquet. Termine-le pour connaître sa durée.
 - **Coût mensuel estimé** : les repas partagés sont répartis entre les chats concernés. Le prix d’un paquet de croquettes est amorti sur sa durée et partagé entre les chats sélectionnés ; pour un paquet encore ouvert, le calcul utilise la durée écoulée.
 - **Photos** : ajoute une photo de profil ou de repas depuis l’appareil photo ou la galerie. Les images sont réduites avant d’être enregistrées.
@@ -78,7 +80,7 @@ La synchronisation a lieu à l’ouverture de l’application et après les modi
 
 ### Mises à jour Android
 
-Au démarrage, KittyPatty vérifie les releases GitHub et propose l’installation si une version plus récente est publiée ; une vérification manuelle est aussi disponible dans les réglages. Le dépôt et ses releases doivent être publics. Chaque release doit contenir un APK et un tag de version croissant correspondant à `versionName` (par exemple `v0.12`) ; incrémente aussi `versionCode`. Android demande l’autorisation d’installer des applications provenant de KittyPatty, puis affiche sa confirmation habituelle. Pour que la mise à jour fonctionne, l’APK doit garder le même certificat de signature que la version installée.
+Au démarrage, KittyPatty vérifie les releases GitHub et propose l’installation si une version plus récente est publiée ; une vérification manuelle est aussi disponible dans les réglages. Le dépôt et ses releases doivent être publics. Chaque release doit contenir un APK et un tag de version croissant correspondant à `versionName` (par exemple `v0.20`) ; incrémente aussi `versionCode`. Android demande l’autorisation d’installer des applications provenant de KittyPatty, puis affiche sa confirmation habituelle. Pour que la mise à jour fonctionne, l’APK doit garder le même certificat de signature que la version installée.
 
 Le projet Android est en Kotlin avec Jetpack Compose ; le serveur et son interface web se trouvent dans `server/`.
 

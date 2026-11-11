@@ -8,7 +8,8 @@ import java.time.temporal.ChronoUnit
 /** Les types de pâtée. Pour en ajouter un, il suffit d'ajouter une ligne ici. */
 enum class Pate(val key: String, val label: String, val adj: String, val emoji: String) {
     POULET("poulet", "Poulet", "au poulet", "🍗"),
-    BOEUF("boeuf", "Bœuf", "au bœuf", "🥩");
+    BOEUF("boeuf", "Bœuf", "au bœuf", "🥩"),
+    SAUMON("saumon", "Saumon", "au saumon", "🐟");
 
     companion object {
         fun from(key: String?): Pate = values().firstOrNull { it.key == key } ?: POULET
@@ -17,13 +18,23 @@ enum class Pate(val key: String, val label: String, val adj: String, val emoji: 
 
 fun pateLabel(key: String): String = when (key) {
     "sachet" -> "Sachet"
+    "auto" -> "Nourriture attribuée selon le chat"
     else -> Pate.values().firstOrNull { it.key == key }?.label ?: key
 }
 
 fun pateEmoji(key: String): String = when (key) {
     "boeuf" -> "🥩"
+    "saumon" -> "🐟"
     "sachet" -> "🥫"
+    "auto" -> "🍽️"
     else -> "🍗"
+}
+
+fun defaultFoodIconColor(kind: String): String = when (kind) {
+    "boeuf" -> "#FFB84A4A"
+    "saumon" -> "#FFE58A24"
+    "sachet" -> "#FF74808F"
+    else -> "#FF4F8FC9"
 }
 
 data class FoodType(
@@ -73,6 +84,7 @@ data class FoodPattern(
 fun defaultFoodTypes() = listOf(
     FoodType("poulet", "Poulet", "🍗", updatedAt = 1L),
     FoodType("boeuf", "Bœuf", "🥩", updatedAt = 1L),
+    FoodType("saumon", "Saumon", "🐟", updatedAt = 1L),
 )
 
 fun defaultFoodPatterns() = listOf(
@@ -83,6 +95,7 @@ fun defaultFoodPatterns() = listOf(
 fun defaultFoodProducts() = listOf(
     FoodProduct("poulet", "Poulet", "poulet", "", "", updatedAt = 1L),
     FoodProduct("boeuf", "Bœuf", "boeuf", "", "", updatedAt = 1L),
+    FoodProduct("saumon", "Saumon", "saumon", "", "", updatedAt = 1L),
 )
 
 object Status {
@@ -101,13 +114,41 @@ data class FoodProduct(
     val deleted: Boolean = false,
     val updatedAt: Long = System.currentTimeMillis(),
     val stockCount: Int? = null,
+    val putAside: Boolean = false,
+    val packaging: String = "sachet",
+    val servingsPerPackage: Int = 1,
+    val openServings: Int = 0,
+    val catIds: List<String> = emptyList(),
+    val iconColor: String = defaultFoodIconColor(kind),
 ) {
     val pateKey: String
-        get() = when (kind) {
-            "boeuf" -> Pate.BOEUF.key
-            "poulet" -> Pate.POULET.key
-            else -> "sachet"
+        get() = kind.takeIf { key -> Pate.values().any { it.key == key } } ?: "sachet"
+
+    val packagingLabel: String
+        get() = when (packaging) {
+            "boite" -> "Boîte"
+            "barquette" -> "Barquette"
+            else -> "Sachet"
         }
+
+    val availableServings: Long?
+        get() {
+            val servings = servingsPerPackage.coerceAtLeast(1)
+            return stockCount?.toLong()?.times(servings)
+                ?.plus(openServings.coerceIn(0, servings - 1))
+        }
+
+    fun withStockPortionDelta(delta: Long, timestamp: Long): FoodProduct {
+        val servings = servingsPerPackage.coerceAtLeast(1)
+        val current = availableServings ?: return this
+        val maximum = Int.MAX_VALUE.toLong() * servings
+        val total = (current + delta).coerceIn(0L, maximum)
+        return copy(
+            stockCount = (total / servings).toInt(),
+            openServings = (total % servings).toInt(),
+            updatedAt = timestamp,
+        )
+    }
 
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -119,18 +160,70 @@ data class FoodProduct(
         .put("deleted", deleted)
         .put("updatedAt", updatedAt)
         .put("stockCount", stockCount ?: JSONObject.NULL)
+        .put("putAside", putAside)
+        .put("packaging", packaging)
+        .put("servingsPerPackage", servingsPerPackage)
+        .put("openServings", openServings)
+        .put("catIds", jsonArrayOf(catIds))
+        .put("iconColor", iconColor)
 
     companion object {
-        fun fromJson(o: JSONObject) = FoodProduct(
-            id = o.getString("id"),
-            name = o.optString("name", ""),
-            kind = o.optString("kind", "sachet"),
-            brand = o.optString("brand", ""),
-            packPrice = o.optString("packPrice", ""),
-            weight = o.optString("weight", ""),
-            deleted = o.optBoolean("deleted", false),
-            updatedAt = o.optLong("updatedAt", 0L),
-            stockCount = if (o.isNull("stockCount")) null else o.optInt("stockCount").coerceAtLeast(0),
+        fun maxServings(packaging: String, stockSettings: StockSettings? = null): Int = when (packaging) {
+            "boite" -> stockSettings?.boiteMaxServings ?: 6
+            "barquette" -> stockSettings?.barquetteMaxServings ?: 4
+            else -> 1
+        }
+
+        fun fromJson(o: JSONObject): FoodProduct {
+            val packaging = o.optString("packaging", "sachet").takeIf {
+                it in setOf("sachet", "boite", "barquette")
+            } ?: "sachet"
+            val servingsPerPackage = o.optInt("servingsPerPackage", 1).coerceAtLeast(1)
+            return FoodProduct(
+                id = o.getString("id"),
+                name = o.optString("name", ""),
+                kind = o.optString("kind", "sachet"),
+                brand = o.optString("brand", ""),
+                packPrice = o.optString("packPrice", ""),
+                weight = o.optString("weight", ""),
+                deleted = o.optBoolean("deleted", false),
+                updatedAt = o.optLong("updatedAt", 0L),
+                stockCount = if (o.isNull("stockCount")) null else o.optInt("stockCount").coerceAtLeast(0),
+                putAside = o.optBoolean("putAside", false),
+                packaging = packaging,
+                servingsPerPackage = servingsPerPackage,
+                openServings = o.optInt("openServings", 0).coerceIn(0, maxOf(servingsPerPackage - 1, 0)),
+                catIds = strList(o.optJSONArray("catIds")),
+                iconColor = o.optString("iconColor", defaultFoodIconColor(o.optString("kind", "sachet"))),
+            )
+        }
+    }
+}
+
+data class FoodAllocation(
+    val catId: String,
+    val productId: String,
+    val servings: Int = 1,
+    val inStock: Boolean = true,
+    val stockWarning: Boolean = false,
+    val lowStock: Boolean = false,
+) {
+    fun toJson(): JSONObject = JSONObject()
+        .put("catId", catId)
+        .put("productId", productId)
+        .put("servings", servings)
+        .put("inStock", inStock)
+        .put("stockWarning", stockWarning)
+        .put("lowStock", lowStock)
+
+    companion object {
+        fun fromJson(o: JSONObject) = FoodAllocation(
+            catId = o.optString("catId", ""),
+            productId = o.optString("productId", ""),
+            servings = o.optInt("servings", 1).coerceAtLeast(1),
+            inStock = o.optBoolean("inStock", true),
+            stockWarning = o.optBoolean("stockWarning", false),
+            lowStock = o.optBoolean("lowStock", false),
         )
     }
 }
@@ -138,19 +231,33 @@ data class FoodProduct(
 data class StockSettings(
     val warningThreshold: Int = 5,
     val lowThreshold: Int = 2,
+    val boiteMaxServings: Int = 6,
+    val barquetteMaxServings: Int = 4,
     val updatedAt: Long = 0L,
 ) {
+    fun maxServingsFor(packaging: String): Int = when (packaging) {
+        "boite" -> boiteMaxServings.coerceAtLeast(1)
+        "barquette" -> barquetteMaxServings.coerceAtLeast(1)
+        else -> 1
+    }
+
     fun toJson(): JSONObject = JSONObject()
         .put("warningThreshold", warningThreshold)
         .put("lowThreshold", lowThreshold)
+        .put("boiteMaxServings", boiteMaxServings)
+        .put("barquetteMaxServings", barquetteMaxServings)
         .put("updatedAt", updatedAt)
 
     companion object {
         fun fromJson(o: JSONObject): StockSettings {
             val warning = o.optInt("warningThreshold", 5).coerceAtLeast(0)
+            val boiteMax = o.optInt("boiteMaxServings", 6).coerceAtLeast(1)
+            val barquetteMax = o.optInt("barquetteMaxServings", 4).coerceAtLeast(1)
             return StockSettings(
                 warningThreshold = warning,
                 lowThreshold = o.optInt("lowThreshold", 2).coerceIn(0, warning),
+                boiteMaxServings = boiteMax,
+                barquetteMaxServings = barquetteMax,
                 updatedAt = o.optLong("updatedAt", 0L),
             )
         }
@@ -254,6 +361,7 @@ data class Plan(
     val alternatePate: Boolean = false,
     val productId: String = "",
     val patternId: String = "",
+    val autoAllocate: Boolean = false,
 ) {
     fun foodTypeOn(date: LocalDate, patterns: List<FoodPattern>): String {
         val effectivePatternId = patternId.ifEmpty {
@@ -275,7 +383,7 @@ data class Plan(
         patterns: List<FoodPattern>,
         products: List<FoodProduct>,
     ): FoodProduct? {
-        val direct = products.firstOrNull { it.id == productId && !it.deleted }
+        val direct = products.firstOrNull { it.id == productId && !it.deleted && !it.putAside }
         if (direct != null) return direct
         val effectivePatternId = patternId.ifEmpty {
             if (!alternatePate) "" else if (pate == Pate.BOEUF.key) "boeuf-poulet" else "poulet-boeuf"
@@ -285,8 +393,11 @@ data class Plan(
         if (pattern.foodIds.isEmpty()) return null
         val startDate = runCatching { LocalDate.parse(start) }.getOrNull() ?: return null
         val occurrence = ChronoUnit.DAYS.between(startDate, date) / everyDays.coerceAtLeast(1)
-        val foodId = pattern.foodIds[(occurrence % pattern.foodIds.size).toInt()]
-        return products.firstOrNull { it.id == foodId && !it.deleted }
+        val availableFoods = pattern.foodIds.mapNotNull { foodId ->
+            products.firstOrNull { it.id == foodId && !it.deleted && !it.putAside }
+        }
+        if (availableFoods.isEmpty()) return null
+        return availableFoods[(occurrence % availableFoods.size).toInt()]
     }
 
     fun pateOn(date: LocalDate): String {
@@ -311,6 +422,7 @@ data class Plan(
         .put("alternatePate", alternatePate)
         .put("productId", productId)
         .put("patternId", patternId)
+        .put("autoAllocate", autoAllocate)
 
     companion object {
         fun fromJson(o: JSONObject): Plan = Plan(
@@ -327,6 +439,7 @@ data class Plan(
             alternatePate = o.optBoolean("alternatePate", false),
             productId = o.optString("productId", ""),
             patternId = o.optString("patternId", ""),
+            autoAllocate = o.optBoolean("autoAllocate", false),
         )
     }
 }
@@ -358,6 +471,8 @@ data class Entry(
     val permanentlyDeleted: Boolean = false,
     val stockDeductedProductId: String = "",
     val stockDeductedCount: Int = 0,
+    val foodAllocations: List<FoodAllocation> = emptyList(),
+    val stockDeductedPortions: Map<String, Int> = emptyMap(),
 ) {
     fun toJson(): JSONObject = JSONObject()
         .put("id", id)
@@ -385,6 +500,12 @@ data class Entry(
         .put("permanentlyDeleted", permanentlyDeleted)
         .put("stockDeductedProductId", stockDeductedProductId)
         .put("stockDeductedCount", stockDeductedCount)
+        .put("foodAllocations", JSONArray().apply {
+            foodAllocations.forEach { put(it.toJson()) }
+        })
+        .put("stockDeductedPortions", JSONObject().apply {
+            stockDeductedPortions.forEach { (productId, portions) -> put(productId, portions) }
+        })
 
     companion object {
         fun fromJson(o: JSONObject): Entry = Entry(
@@ -413,6 +534,17 @@ data class Entry(
             permanentlyDeleted = o.optBoolean("permanentlyDeleted", false),
             stockDeductedProductId = o.optString("stockDeductedProductId", ""),
             stockDeductedCount = o.optInt("stockDeductedCount", 0).coerceAtLeast(0),
+            foodAllocations = o.optJSONArray("foodAllocations")?.let { allocations ->
+                (0 until allocations.length()).mapNotNull { index ->
+                    runCatching { FoodAllocation.fromJson(allocations.getJSONObject(index)) }.getOrNull()
+                }
+            }.orEmpty(),
+            stockDeductedPortions = o.optJSONObject("stockDeductedPortions")?.let { portions ->
+                portions.keys().asSequence().mapNotNull { productId ->
+                    val count = portions.optInt(productId, 0).coerceAtLeast(0)
+                    productId.takeIf { count > 0 }?.let { it to count }
+                }.toMap()
+            }.orEmpty(),
         )
     }
 }

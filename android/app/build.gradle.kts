@@ -12,8 +12,8 @@ android {
         applicationId = "be.chatpate"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.12"
+        versionCode = 4
+        versionName = "0.20"
     }
 
     buildTypes {
@@ -37,6 +37,7 @@ android {
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.10.01")
     implementation(composeBom)
+    testImplementation("junit:junit:4.13.2")
 
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")

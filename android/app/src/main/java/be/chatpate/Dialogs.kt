@@ -12,18 +12,22 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
@@ -45,10 +49,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import java.math.BigDecimal
+import java.math.RoundingMode
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -106,8 +113,12 @@ fun KibblePackageDialog(
         )
     }
     var finishedOn by remember(initial?.id) {
-        mutableStateOf(initial?.finishedOn?.let { runCatching { LocalDate.parse(it) }.getOrNull() })
+        mutableStateOf(
+            if (initial?.addedOn.isNullOrBlank()) null
+            else initial?.finishedOn?.let { runCatching { LocalDate.parse(it) }.getOrNull() },
+        )
     }
+    var startLater by remember(initial?.id) { mutableStateOf(initial != null && initial.addedOn.isBlank()) }
     var catIds by remember(initial?.id) {
         mutableStateOf(initial?.catIds.orEmpty().filter { id -> cats.any { it.id == id } })
     }
@@ -147,28 +158,50 @@ fun KibblePackageDialog(
                     placeholder = { Text("ex. 18,90") },
                     singleLine = true,
                 )
-                Text("Date d’ajout", fontWeight = FontWeight.Bold)
-                OutlinedButton(onClick = {
-                    DatePickerDialog(
-                        ctx,
-                        { _, year, month, day -> addedOn = LocalDate.of(year, month + 1, day) },
-                        addedOn.year, addedOn.monthValue - 1, addedOn.dayOfMonth,
-                    ).show()
-                }) { Text(Fmt.dateLong(addedOn)) }
-                Text("Date de fin (facultative)", fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text("Commencer plus tard", fontWeight = FontWeight.SemiBold)
+                    Switch(
+                        checked = startLater,
+                        onCheckedChange = {
+                            startLater = it
+                            finishedOn = null
+                        },
+                    )
+                }
+                if (startLater) {
+                    Text(
+                        "Le paquet restera en attente jusqu’à ce que tu appuies sur « Commencer ».",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text("Date de début", fontWeight = FontWeight.Bold)
                     OutlinedButton(onClick = {
-                        val date = finishedOn ?: LocalDate.now(ZoneId.systemDefault())
                         DatePickerDialog(
                             ctx,
-                            { _, year, month, day -> finishedOn = LocalDate.of(year, month + 1, day) },
-                            date.year, date.monthValue - 1, date.dayOfMonth,
+                            { _, year, month, day -> addedOn = LocalDate.of(year, month + 1, day) },
+                            addedOn.year, addedOn.monthValue - 1, addedOn.dayOfMonth,
                         ).show()
-                    }) {
-                        Text(finishedOn?.let { Fmt.dateLong(it) } ?: "Paquet en cours")
-                    }
-                    if (finishedOn != null) {
-                        TextButton(onClick = { finishedOn = null }) { Text("En cours") }
+                    }) { Text(Fmt.dateLong(addedOn)) }
+                    Text("Date de fin (facultative)", fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(onClick = {
+                            val date = finishedOn ?: LocalDate.now(ZoneId.systemDefault())
+                            DatePickerDialog(
+                                ctx,
+                                { _, year, month, day -> finishedOn = LocalDate.of(year, month + 1, day) },
+                                date.year, date.monthValue - 1, date.dayOfMonth,
+                            ).show()
+                        }) {
+                            Text(finishedOn?.let { Fmt.dateLong(it) } ?: "Paquet en cours")
+                        }
+                        if (finishedOn != null) {
+                            TextButton(onClick = { finishedOn = null }) { Text("En cours") }
+                        }
                     }
                 }
                 Text("Chats qui mangent ce paquet", fontWeight = FontWeight.Bold)
@@ -178,13 +211,13 @@ fun KibblePackageDialog(
         confirmButton = {
             Button(
                 enabled = parsedPrice != null && parsedPrice >= 0 && catIds.isNotEmpty() &&
-                    (finishedOn == null || !finishedOn!!.isBefore(addedOn)),
+                    (startLater || finishedOn == null || !finishedOn!!.isBefore(addedOn)),
                 onClick = {
                     onSave(
                         KibblePackage(
                             id = initial?.id ?: UUID.randomUUID().toString().take(8),
                             price = parsedPrice!!.toString(),
-                            addedOn = addedOn.toString(),
+                            addedOn = if (startLater) "" else addedOn.toString(),
                             finishedOn = finishedOn?.toString().orEmpty(),
                             catIds = catIds.distinct(),
                             brand = brand.trim(),
@@ -211,6 +244,7 @@ fun PlanDialog(
     cats: List<Cat>,
     products: List<FoodProduct>,
     foodPatterns: List<FoodPattern>,
+    stockSettings: StockSettings,
     initial: Plan?,
     onSave: (Plan) -> Unit,
     onDelete: (() -> Unit)?,
@@ -225,14 +259,15 @@ fun PlanDialog(
                 if (initial.pate == Pate.BOEUF.key) "boeuf-poulet" else "poulet-boeuf"
             } else "")
     }
+    var autoAllocate by remember(initial?.id) { mutableStateOf(initial?.autoAllocate ?: false) }
     var productId by remember {
         mutableStateOf(
-            initial?.productId?.takeIf { id -> products.any { it.id == id && !it.deleted } }
+            initial?.productId?.takeIf { id -> products.any { it.id == id && !it.deleted && !it.putAside } }
                 ?: if (patternId.isEmpty()) {
                     val legacyFoodId = initial?.pate
-                    products.firstOrNull { !it.deleted && it.id == legacyFoodId }?.id
+                    products.firstOrNull { !it.deleted && !it.putAside && it.id == legacyFoodId }?.id
                         ?: products.firstOrNull {
-                            !it.deleted && it.pateKey == (legacyFoodId ?: Pate.POULET.key)
+                            !it.deleted && !it.putAside && it.pateKey == (legacyFoodId ?: Pate.POULET.key)
                         }?.id.orEmpty()
                 } else "",
         )
@@ -251,6 +286,27 @@ fun PlanDialog(
                 initial.catIds.filter { id -> cats.any { it.id == id } }.ifEmpty { cats.map { it.id } }
             } else cats.map { it.id }
         )
+    }
+    val forecastShortages = if (!autoAllocate || catIds.isEmpty()) 0 else {
+        val today = LocalDate.now(ZoneId.systemDefault())
+        val forecastStock = FoodAllocator.initialStock(products)
+        var shortages = 0
+        for (offset in 0..14) {
+            val date = today.plusDays(offset.toLong())
+            val daysFromStart = java.time.temporal.ChronoUnit.DAYS.between(start, date)
+            if (daysFromStart < 0 || daysFromStart % every.coerceAtLeast(1) != 0L) continue
+            val at = date.atTime(timeMin / 60, timeMin % 60)
+                .atZone(ZoneId.systemDefault()).toInstant().toEpochMilli()
+            if (at <= System.currentTimeMillis()) continue
+            shortages += FoodAllocator.allocate(
+                catIds,
+                products,
+                forecastStock,
+                stockSettings.warningThreshold,
+                stockSettings.lowThreshold,
+            ).count { !it.inStock }
+        }
+        shortages
     }
 
     AlertDialog(
@@ -290,10 +346,82 @@ fun PlanDialog(
                     ).show()
                 }) { Text(Fmt.dateLong(start)) }
 
-                if (products.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Répartir équitablement les nourritures", fontWeight = FontWeight.Bold)
+                        Text(
+                            "L'application répartit les aliments disponibles selon le stock pour éviter d'en épuiser un avant les autres.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(checked = autoAllocate, onCheckedChange = { autoAllocate = it })
+                }
+
+                if (autoAllocate) {
+                    if (catIds.isEmpty()) {
+                        Text(
+                            "Sélectionne au moins un chat pour préparer l’attribution.",
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                    cats.filter { it.id in catIds }.forEach { cat ->
+                        val applicable = products.filterNot { it.deleted || it.putAside }
+                        val restricted = applicable.filter { cat.id in it.catIds }
+                        val eligible = if (restricted.isNotEmpty()) restricted else {
+                            applicable.filter { it.catIds.isEmpty() }
+                        }
+                        val tracked = eligible.filter { it.availableServings != null }
+                        val best = tracked.maxByOrNull { it.availableServings ?: 0L }
+                        val summary = when {
+                            eligible.isEmpty() ->
+                                "Aucune nourriture configurée pour ${cat.name}."
+                            best == null ->
+                                "Stock non encodé pour ${cat.name} : ajoute les quantités dans Alimentation."
+                            best.availableServings!! <= 0L ->
+                                "Stock épuisé pour ${cat.name} (${best.name}) : vérifie la quantité avant de continuer."
+                            best.availableServings!! <= stockSettings.lowThreshold ->
+                                "Stock bas pour ${cat.name} : ${best.name}, ${best.availableServings} portion(s)."
+                            best.availableServings!! <= stockSettings.warningThreshold ->
+                                "À surveiller pour ${cat.name} : ${best.name}, ${best.availableServings} portion(s)."
+                            else -> "${cat.name} : ${best.name}, ${best.availableServings} portion(s) disponibles."
+                        }
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (best == null || best.availableServings!! <= stockSettings.lowThreshold) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        )
+                    }
+                    Text(
+                        "Chaque chat reçoit une portion. Une nourriture spécifique n’est jamais remplacée automatiquement par le stock commun. Tu peux continuer malgré un avertissement.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    if (forecastShortages > 0) {
+                        Text(
+                            "Stock encodé insuffisant pour $forecastShortages portion(s) sur les 14 prochains jours pour ce programme. Les autres programmes peuvent encore utiliser ce stock.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(
+                        "Ajoute ou actualise les nourritures dans Alimentation > Actualisation des stocks.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
+                if (!autoAllocate && products.isNotEmpty()) {
                     Text("Nourriture seule", fontWeight = FontWeight.Bold)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        products.filterNot { it.deleted }.forEach { product ->
+                        products.filterNot { it.deleted || it.putAside }.forEach { product ->
                             FilterChip(
                                 selected = productId == product.id,
                                 onClick = {
@@ -301,10 +429,11 @@ fun PlanDialog(
                                     pate = product.pateKey
                                     patternId = ""
                                 },
+                                leadingIcon = {
+                                    FoodIcon(product.pateKey, product.iconColor, size = 18.dp)
+                                },
                                 label = {
-                                    Text(
-                                        "${pateEmoji(product.pateKey)} ${product.name}"
-                                    )
+                                    Text(product.name)
                                 },
                             )
                         }
@@ -337,13 +466,17 @@ fun PlanDialog(
                         )
                     }
                 }
-                OutlinedTextField(
-                    value = qty,
-                    onValueChange = { qty = it },
-                    label = { Text("Quantité (facultatif)") },
-                    placeholder = { Text("ex : 1 sachet, 80 g") },
-                    singleLine = true,
-                )
+                if (autoAllocate) {
+                    Text("Quantité prévue : 1 portion par chat sélectionné.")
+                } else {
+                    OutlinedTextField(
+                        value = qty,
+                        onValueChange = { qty = it },
+                        label = { Text("Quantité (facultatif)") },
+                        placeholder = { Text("ex : 1 sachet, 80 g") },
+                        singleLine = true,
+                    )
+                }
 
                 Text("Pour quel(s) chat(s) ?", fontWeight = FontWeight.Bold)
                 CatPicker(cats, catIds) { catIds = it }
@@ -369,12 +502,13 @@ fun PlanDialog(
                             everyDays = every,
                             start = start.toString(),
                             pate = pate,
-                            qty = qty.trim(),
+                            qty = if (autoAllocate) "1 portion / chat" else qty.trim(),
                             active = initial?.active ?: true,
                             catIds = catIds,
                             alternatePate = false,
-                            productId = productId,
-                            patternId = patternId,
+                            productId = if (autoAllocate) "" else productId,
+                            patternId = if (autoAllocate) "" else patternId,
+                            autoAllocate = autoAllocate,
                         )
                     )
                 },
@@ -385,8 +519,210 @@ fun PlanDialog(
 }
 
 @Composable
+fun AddSachetBoxDialog(
+    products: List<FoodProduct>,
+    onAdd: (List<FoodProduct>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sachets = products.filter { !it.deleted && it.packaging == "sachet" }
+    val lines = remember {
+        mutableStateListOf(SachetBoxLine())
+    }
+    var totalPriceText by remember { mutableStateOf("") }
+    val totalPrice = totalPriceText.replace(',', '.').toBigDecimalOrNull()
+    val totalQuantity = lines.sumOf { it.quantity.toIntOrNull()?.toLong() ?: 0L }
+    val unitPrice = if (totalQuantity > 0L && totalPrice != null && totalPrice >= BigDecimal.ZERO) {
+        totalPrice.divide(BigDecimal.valueOf(totalQuantity), 4, RoundingMode.HALF_UP)
+            .stripTrailingZeros().toPlainString()
+    } else null
+    val validLines = lines.isNotEmpty() && lines.all { line ->
+        val count = line.quantity.toIntOrNull()
+        count != null && count > 0 && (
+            if (line.createNew) {
+                line.name.isNotBlank() &&
+                    products.none { !it.deleted && it.name.trim().equals(line.name.trim(), true) } &&
+                    lines.count { other ->
+                        other.createNew && other.name.trim().equals(line.name.trim(), true)
+                    } == 1
+            } else {
+                sachets.any { it.id == line.productId }
+            }
+        )
+    } && lines.filterNot { it.createNew }.groupBy { it.productId }.all { (productId, sameProduct) ->
+        val product = sachets.firstOrNull { it.id == productId } ?: return@all false
+        val added = sameProduct.sumOf { it.quantity.toInt().toLong() }
+        (product.stockCount ?: 0).toLong() + added <= Int.MAX_VALUE.toLong()
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ajouter une boîte de sachets") },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Text(
+                    "Ajoute chaque goût de la boîte et son nombre de sachets.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                lines.forEachIndexed { index, line ->
+                    var menuExpanded by remember(index) { mutableStateOf(false) }
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(Modifier.weight(1f)) {
+                                OutlinedButton(
+                                    onClick = { menuExpanded = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                ) {
+                                    val selectedName = if (line.createNew) {
+                                        line.name.ifBlank { "Nouveau goût…" }
+                                    } else {
+                                        sachets.firstOrNull { it.id == line.productId }?.name
+                                            ?: "Choisir un goût"
+                                    }
+                                    Text(selectedName, maxLines = 1)
+                                }
+                                DropdownMenu(
+                                    expanded = menuExpanded,
+                                    onDismissRequest = { menuExpanded = false },
+                                ) {
+                                    sachets.forEach { product ->
+                                        DropdownMenuItem(
+                                            text = { Text(product.name) },
+                                            onClick = {
+                                                lines[index] = line.copy(
+                                                    productId = product.id,
+                                                    createNew = false,
+                                                    name = "",
+                                                )
+                                                menuExpanded = false
+                                            },
+                                        )
+                                    }
+                                    DropdownMenuItem(
+                                        text = { Text("Créer un nouveau goût…") },
+                                        onClick = {
+                                            lines[index] = line.copy(productId = "", createNew = true)
+                                            menuExpanded = false
+                                        },
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(6.dp))
+                            OutlinedTextField(
+                                value = line.quantity,
+                                onValueChange = { value ->
+                                    lines[index] = line.copy(quantity = value.filter(Char::isDigit))
+                                },
+                                label = { Text("Qté") },
+                                singleLine = true,
+                                modifier = Modifier.width(78.dp),
+                            )
+                            if (lines.size > 1) {
+                                TextButton(onClick = { lines.removeAt(index) }) { Text("×") }
+                            }
+                        }
+                        if (line.createNew) {
+                            OutlinedTextField(
+                                value = line.name,
+                                onValueChange = { value -> lines[index] = line.copy(name = value) },
+                                label = { Text("Nom du nouveau goût") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                (Pate.values().map { it.key to it.label } + ("sachet" to "Autre"))
+                                    .forEach { (key, label) ->
+                                        FilterChip(
+                                            selected = line.kind == key,
+                                            onClick = { lines[index] = line.copy(kind = key) },
+                                            label = { Text(label) },
+                                        )
+                                    }
+                            }
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = { lines.add(SachetBoxLine()) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("+ Ajouter un goût") }
+                OutlinedTextField(
+                    value = totalPriceText,
+                    onValueChange = { value ->
+                        totalPriceText = value.filter { it.isDigit() || it == ',' || it == '.' }
+                    },
+                    label = { Text("Prix total de la boîte (€)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                if (unitPrice != null) {
+                    Text(
+                        "Total : $totalQuantity sachet(s) · $unitPrice € par sachet",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                enabled = validLines && totalQuantity > 0L &&
+                    totalPrice != null && totalPrice > BigDecimal.ZERO,
+                onClick = {
+                    val count = totalQuantity
+                    val pricePerSachet = totalPrice!!
+                        .divide(BigDecimal.valueOf(count), 4, RoundingMode.HALF_UP)
+                        .stripTrailingZeros()
+                        .toPlainString()
+                    val updates = lines.filter { it.createNew }.map { line ->
+                        val quantity = line.quantity.toInt()
+                        FoodProduct(
+                            id = UUID.randomUUID().toString().take(8),
+                            name = line.name.trim(),
+                            kind = line.kind,
+                            brand = "",
+                            packPrice = pricePerSachet,
+                            stockCount = quantity,
+                            packaging = "sachet",
+                            iconColor = defaultFoodIconColor(line.kind),
+                        )
+                    } + lines.filterNot { it.createNew }.groupBy { it.productId }.map { (productId, sameProduct) ->
+                        val product = sachets.first { it.id == productId }
+                        val quantity = sameProduct.sumOf { it.quantity.toInt().toLong() }
+                        product.copy(
+                            packPrice = pricePerSachet,
+                            stockCount = ((product.stockCount ?: 0).toLong() + quantity).toInt(),
+                            updatedAt = System.currentTimeMillis(),
+                        )
+                    }
+                    onAdd(updates)
+                    onDismiss()
+                },
+            ) { Text("Ajouter au stock") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } },
+    )
+}
+
+private data class SachetBoxLine(
+    val productId: String = "",
+    val createNew: Boolean = false,
+    val name: String = "",
+    val kind: String = "sachet",
+    val quantity: String = "",
+)
+
+@Composable
 fun ProductCatalogDialog(
     products: List<FoodProduct>,
+    cats: List<Cat>,
+    stockSettings: StockSettings,
     initialProductId: String? = null,
     onSave: (FoodProduct) -> Unit,
     onDelete: (String) -> Unit,
@@ -395,115 +731,310 @@ fun ProductCatalogDialog(
     var selectedId by remember(initialProductId) { mutableStateOf(initialProductId) }
     val initialProduct = products.firstOrNull { it.id == initialProductId }
     var name by remember(initialProductId) { mutableStateOf(initialProduct?.name.orEmpty()) }
-    var kind by remember(initialProductId) { mutableStateOf(initialProduct?.kind ?: "sachet") }
+    var kind by remember(initialProductId) { mutableStateOf(initialProduct?.kind ?: "poulet") }
+    var iconColor by remember(initialProductId) {
+        mutableStateOf(initialProduct?.iconColor ?: defaultFoodIconColor(initialProduct?.kind ?: "poulet"))
+    }
     var brand by remember(initialProductId) { mutableStateOf(initialProduct?.brand.orEmpty()) }
     var price by remember(initialProductId) { mutableStateOf(initialProduct?.packPrice.orEmpty()) }
     var weight by remember(initialProductId) { mutableStateOf(initialProduct?.weight.orEmpty()) }
     var stockCount by remember(initialProductId) { mutableStateOf(initialProduct?.stockCount?.toString().orEmpty()) }
+    var packaging by remember(initialProductId) { mutableStateOf(initialProduct?.packaging ?: "sachet") }
+    var servingsPerPackage by remember(initialProductId) {
+        mutableIntStateOf(initialProduct?.servingsPerPackage ?: 1)
+    }
+    var openServings by remember(initialProductId) {
+        mutableStateOf(initialProduct?.openServings?.toString().orEmpty())
+    }
+    var hasOpenPackage by remember(initialProductId, packaging) {
+        mutableStateOf(packaging != "sachet" && (initialProduct?.openServings ?: 0) > 0)
+    }
+    var catIds by remember(initialProductId) { mutableStateOf(initialProduct?.catIds.orEmpty()) }
     var showDeleteConfirmation by remember { mutableStateOf(false) }
     val selected = products.firstOrNull { it.id == selectedId && !it.deleted }
     val parsedStock = stockCount.toIntOrNull()
+    val packageMax = FoodProduct.maxServings(packaging, stockSettings)
+    val selectedOpenConsumed = (servingsPerPackage - (openServings.toIntOrNull() ?: 0))
+        .coerceIn(0, servingsPerPackage)
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(if (selected == null) "Ajouter une nourriture" else "Modifier la nourriture") },
         text = {
             Column(
-                modifier = Modifier.verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier
+                    .verticalScroll(rememberScrollState())
+                    .padding(bottom = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 OutlinedTextField(name, { name = it }, label = { Text("Nom de la nourriture") }, singleLine = true)
                 OutlinedTextField(brand, { brand = it }, label = { Text("Marque") }, singleLine = true)
+                Text("Type de nourriture", fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Pate.values().forEach { foodType ->
+                        FilterChip(
+                            selected = kind == foodType.key,
+                            onClick = {
+                                kind = foodType.key
+                                iconColor = defaultFoodIconColor(foodType.key)
+                            },
+                            leadingIcon = {
+                                FoodIcon(foodType.key, iconColor, foodType.emoji, 18.dp)
+                            },
+                            label = { Text(foodType.label) },
+                        )
+                    }
+                    FilterChip(
+                        selected = kind == "sachet",
+                        onClick = {
+                            kind = "sachet"
+                            iconColor = defaultFoodIconColor("sachet")
+                        },
+                        leadingIcon = { FoodIcon("sachet", iconColor, "🥫", 18.dp) },
+                        label = { Text("Autre") },
+                    )
+                }
+                Text("Couleur de l’icône", fontWeight = FontWeight.Bold)
+                val iconColors = listOf(
+                    "#FF4F8FC9", "#FFB84A4A", "#FFE58A24", "#FF4F9B6A",
+                    "#FF9B6BC4", "#FF3E9F9A", "#FF74808F", "#FFEC5A9D",
+                    "#FF7E57C2", "#FFAB47BC", "#FF5C6BC0", "#FF26A69A",
+                )
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    iconColors.forEach { colorValue ->
+                        Box(
+                            Modifier
+                                .size(32.dp)
+                                .background(foodIconColor(colorValue, MaterialTheme.colorScheme.primary), CircleShape)
+                                .border(
+                                    width = if (iconColor == colorValue) 3.dp else 1.dp,
+                                    color = if (iconColor == colorValue) MaterialTheme.colorScheme.onSurface
+                                    else MaterialTheme.colorScheme.outlineVariant,
+                                    shape = CircleShape,
+                                )
+                                .clickable { iconColor = colorValue },
+                        )
+                    }
+                    FoodIcon(kind, iconColor, pateEmoji(kind), 24.dp)
+                }
                 OutlinedTextField(
                     price,
                     { price = it },
-                    label = { Text("Prix du sachet / portion (€)") },
+                    label = { Text("Prix de l'emballage (€)") },
                     placeholder = { Text("ex. 1,49") },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     weight,
                     { weight = it.filter { char -> char.isDigit() || char == ',' || char == '.' } },
-                    label = { Text("Poids du sachet / portion (g)") },
+                    label = { Text("Poids de l'emballage (g)") },
                     placeholder = { Text("ex. 85") },
                     singleLine = true,
+                )
+                Text("Type d'emballage", fontWeight = FontWeight.Bold)
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf("sachet" to "Sachet", "boite" to "Boîte", "barquette" to "Barquette")
+                        .forEach { (key, label) ->
+                            FilterChip(
+                                selected = packaging == key,
+                                onClick = {
+                                    packaging = key
+                                    servingsPerPackage = FoodProduct.maxServings(key, stockSettings)
+                                    if (key == "sachet") {
+                                        openServings = "0"
+                                        hasOpenPackage = false
+                                    } else {
+                                        val remaining = (openServings.toIntOrNull() ?: 0)
+                                            .coerceIn(0, FoodProduct.maxServings(key, stockSettings))
+                                        openServings = remaining.toString()
+                                        hasOpenPackage = remaining > 0
+                                    }
+                                },
+                                label = { Text(label) },
+                            )
+                        }
+                }
+                if (packaging == "sachet") {
+                    Text(
+                        "Un sachet correspond à une portion. Le stock est compté en sachets.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                } else {
+                    Text(
+                        if (packaging == "boite") "Portions par boîte" else "Portions par barquette",
+                        fontWeight = FontWeight.Bold,
+                    )
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        (1..packageMax).forEach { portions ->
+                            FilterChip(
+                                selected = servingsPerPackage == portions,
+                                onClick = {
+                                    val previouslyConsumed = (servingsPerPackage -
+                                        (openServings.toIntOrNull() ?: 0)).coerceAtLeast(0)
+                                    servingsPerPackage = portions
+                                    if (hasOpenPackage) {
+                                        val consumed = previouslyConsumed.coerceAtMost(portions)
+                                        openServings = (portions - consumed)
+                                            .coerceIn(0, portions - 1)
+                                            .toString()
+                                    } else {
+                                        openServings = "0"
+                                    }
+                                },
+                                label = { Text("${portions}x") },
+                            )
+                        }
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
+                        Text(
+                            if (packaging == "boite") "Boîte déjà ouverte" else "Barquette déjà ouverte",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Switch(
+                            checked = hasOpenPackage,
+                            onCheckedChange = {
+                                hasOpenPackage = it
+                                if (it) {
+                                    openServings = (servingsPerPackage - 1).coerceAtLeast(0).toString()
+                                } else {
+                                    openServings = "0"
+                                }
+                            },
+                        )
+                    }
+                    if (hasOpenPackage) {
+                        Text("Nombre d'utilisations déjà consommées", fontWeight = FontWeight.Bold)
+                        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            (0..servingsPerPackage).forEach { consumed ->
+                                FilterChip(
+                                    selected = selectedOpenConsumed == consumed,
+                                    onClick = {
+                                        val remaining = if (consumed == 0) 0 else servingsPerPackage - consumed
+                                        openServings = remaining.toString()
+                                    },
+                                    label = { Text("${consumed}x") },
+                                )
+                            }
+                        }
+                    }
+                }
+                Text("Pour quel(s) chat(s) ?", fontWeight = FontWeight.Bold)
+                CatPicker(cats, catIds) { catIds = it }
+                Text(
+                    if (catIds.isEmpty()) {
+                        "Stock partagé entre tous les chats."
+                    } else {
+                        "Nourriture réservée aux chats sélectionnés ; aucun remplacement automatique par le stock commun."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text("Stock disponible", fontWeight = FontWeight.Bold)
                 OutlinedTextField(
                     stockCount,
                     { stockCount = it.filter(Char::isDigit) },
-                    label = { Text("Nombre de sachets / portions") },
+                    label = {
+                        Text(
+                            if (packaging == "sachet") "Nombre de sachets" else "Nombre d'emballages fermés"
+                        )
+                    },
                     placeholder = { Text("Laisser vide pour ne pas suivre le stock") },
                     singleLine = true,
                 )
+                if (packaging != "sachet" && hasOpenPackage) {
+                    Text(
+                        "Emballage ouvert actuellement : ${selectedOpenConsumed}x consommé(s)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         },
         confirmButton = {
-            Column(Modifier.fillMaxWidth()) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    if (selectedId != null) {
-                        OutlinedButton(
-                            onClick = {
-                                selectedId = null
-                                name = ""
-                                kind = "sachet"
-                                brand = ""
-                                price = ""
-                                weight = ""
-                                stockCount = ""
-                            },
-                        ) {
-                            Icon(
-                                painterResource(R.drawable.ic_action_plus),
-                                contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Text(" Nouveau")
-                        }
-                    }
-                    Spacer(Modifier.weight(1f))
-                    if (selected != null && selected.id !in setOf("poulet", "boeuf")) {
-                        IconButton(onClick = { showDeleteConfirmation = true }) {
-                            Icon(
-                                painterResource(R.drawable.ic_action_delete),
-                                contentDescription = "Supprimer cette nourriture",
-                                tint = MaterialTheme.colorScheme.error,
-                            )
-                        }
-                    } else {
-                        Spacer(Modifier.size(48.dp))
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    TextButton(onClick = onDismiss) { Text("Fermer") }
-                    Button(
-                        enabled = name.isNotBlank() && brand.isNotBlank() &&
-                            (price.replace(',', '.').toDoubleOrNull()?.let { it >= 0 } == true) &&
-                            (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true) &&
-                            (stockCount.isBlank() || (parsedStock != null && parsedStock >= 0)),
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 0.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (selectedId != null) {
+                    OutlinedButton(
                         onClick = {
-                            onSave(
-                                FoodProduct(
-                                    id = selectedId ?: UUID.randomUUID().toString().take(8),
-                                    name = name.trim(),
-                                    kind = kind,
-                                    brand = brand.trim(),
-                                    packPrice = price.trim().replace(',', '.'),
-                                    weight = weight.trim().replace(',', '.'),
-                                    stockCount = parsedStock,
-                                )
-                            )
-                            onDismiss()
+                            selectedId = null
+                            name = ""
+                            kind = "poulet"
+                            iconColor = defaultFoodIconColor(kind)
+                            brand = ""
+                            price = ""
+                            weight = ""
+                            stockCount = ""
+                            packaging = "sachet"
+                            servingsPerPackage = 1
+                            openServings = ""
+                            catIds = emptyList()
                         },
-                    ) { Text(if (selected == null) "Ajouter" else "Enregistrer") }
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                    ) {
+                        Icon(
+                            painterResource(R.drawable.ic_action_plus),
+                            contentDescription = null,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(" Nouveau")
+                    }
                 }
+                Spacer(Modifier.weight(1f))
+                if (selected != null && selected.id !in setOf("poulet", "boeuf")) {
+                    IconButton(onClick = { showDeleteConfirmation = true }, modifier = Modifier.size(36.dp)) {
+                        Icon(
+                            painterResource(R.drawable.ic_action_delete),
+                            contentDescription = "Supprimer cette nourriture",
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                } else {
+                    Spacer(Modifier.size(36.dp))
+                }
+                TextButton(onClick = onDismiss) { Text("Fermer") }
+                Button(
+                    enabled = name.isNotBlank() && brand.isNotBlank() &&
+                        (price.replace(',', '.').toDoubleOrNull()?.let { it >= 0 } == true) &&
+                        (weight.isBlank() || weight.replace(',', '.').toDoubleOrNull()?.let { it > 0 } == true) &&
+                        (stockCount.isBlank() || (parsedStock != null && parsedStock >= 0)) &&
+                        (stockCount.isNotBlank() || openServings.isBlank() || openServings.toIntOrNull() == 0) &&
+                        (openServings.isBlank() || openServings.toIntOrNull()?.let {
+                            it in 0 until servingsPerPackage
+                        } == true),
+                    onClick = {
+                        onSave(
+                            FoodProduct(
+                                id = selectedId ?: UUID.randomUUID().toString().take(8),
+                                name = name.trim(),
+                                kind = kind,
+                                brand = brand.trim(),
+                                packPrice = price.trim().replace(',', '.'),
+                                weight = weight.trim().replace(',', '.'),
+                                stockCount = parsedStock,
+                                putAside = selected?.putAside ?: false,
+                                packaging = packaging,
+                                servingsPerPackage = servingsPerPackage,
+                                openServings = openServings.toIntOrNull() ?: 0,
+                                catIds = catIds,
+                                iconColor = iconColor,
+                            )
+                        )
+                        onDismiss()
+                    },
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
+                ) { Text(if (selected == null) "Ajouter" else "Enregistrer") }
             }
         },
     )
@@ -519,7 +1050,8 @@ fun ProductCatalogDialog(
                         onDelete(selected.id)
                         selectedId = null
                         name = ""
-                        kind = "sachet"
+                        kind = "poulet"
+                        iconColor = defaultFoodIconColor(kind)
                         brand = ""
                         price = ""
                         weight = ""
@@ -556,13 +1088,19 @@ fun FoodSettingsScreen(
             Text("Combinaisons de nourriture", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Choisis les nourritures du catalogue et leur ordre.", style = MaterialTheme.typography.bodySmall)
             patterns.filterNot { it.deleted }.forEach { pattern ->
-                val summary = pattern.foodIds.mapNotNull { id ->
-                    products.firstOrNull { it.id == id && !it.deleted }?.let { "${pateEmoji(it.pateKey)} ${it.name}" }
-                }.joinToString(" → ")
+                val foods = pattern.foodIds.mapNotNull { id ->
+                    products.firstOrNull { it.id == id && !it.deleted }
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f)) {
                         Text(pattern.name, fontWeight = FontWeight.Medium)
-                        Text(summary, style = MaterialTheme.typography.bodySmall)
+                        FlowRow(verticalArrangement = Arrangement.Center) {
+                            foods.forEachIndexed { index, food ->
+                                if (index > 0) Text(" → ")
+                                FoodIcon(food.pateKey, food.iconColor, size = 16.dp)
+                                Text(food.name, style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
                     }
                     TextButton(onClick = {
                         patternId = pattern.id
@@ -576,21 +1114,29 @@ fun FoodSettingsScreen(
             OutlinedTextField(patternName, { patternName = it }, label = { Text("Nom de la combinaison") }, singleLine = true)
             Text("Ajoute les nourritures dans l'ordre voulu :", style = MaterialTheme.typography.bodySmall)
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                products.filterNot { it.deleted }.forEach { food ->
+                products.filterNot { it.deleted || it.putAside }.forEach { food ->
                     FilterChip(
                         selected = false,
                         onClick = { sequence.add(food.id) },
-                        label = { Text("+ ${pateEmoji(food.pateKey)} ${food.name}") },
+                        leadingIcon = { FoodIcon(food.pateKey, food.iconColor, size = 18.dp) },
+                        label = { Text("+ ${food.name}") },
                     )
                 }
             }
             sequence.toList().forEachIndexed { index, id ->
                 val food = products.firstOrNull { it.id == id }
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        "${index + 1}. ${food?.let { pateEmoji(it.pateKey) }.orEmpty()} ${food?.name.orEmpty()}",
+                    Row(
                         modifier = Modifier.weight(1f),
-                    )
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text("${index + 1}. ")
+                        if (food != null) {
+                            FoodIcon(food.pateKey, food.iconColor, size = 18.dp)
+                            Spacer(Modifier.size(4.dp))
+                        }
+                        Text(food?.name.orEmpty())
+                    }
                     FilledTonalIconButton(
                         onClick = { if (index > 0) {
                             val item = sequence.removeAt(index)
@@ -714,9 +1260,64 @@ fun EncodeDialog(
                 }
 
                 Text("Pâtée donnée", fontWeight = FontWeight.Bold)
-                if (products.isNotEmpty()) {
+                if (entry.foodAllocations.isNotEmpty()) {
+                    entry.foodAllocations.forEach { allocation ->
+                        val catName = cats.firstOrNull { it.id == allocation.catId }?.name ?: "Chat"
+                        val foodName = products.firstOrNull { it.id == allocation.productId }?.name
+                        Text(
+                            "$catName : ${foodName ?: "nourriture à configurer"}" +
+                                when {
+                                    !allocation.inStock -> " — stock insuffisant, vérifie avant de servir"
+                                    allocation.lowStock -> " — stock bas"
+                                    allocation.stockWarning -> " — stock à surveiller"
+                                    else -> ""
+                                },
+                            color = if (!allocation.inStock) {
+                                MaterialTheme.colorScheme.error
+                            } else if (allocation.lowStock) {
+                                MaterialTheme.colorScheme.error
+                            } else if (allocation.stockWarning) {
+                                MaterialTheme.colorScheme.tertiary
+                            } else {
+                                MaterialTheme.colorScheme.onSurface
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Text(
+                        "Tu peux choisir un autre aliment pour ce repas ; les prochains repas seront recalculés après l’enregistrement.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        products.filter { !it.deleted || it.id == entry.productId }.forEach { product ->
+                        FilterChip(
+                            selected = productId.isEmpty(),
+                            onClick = {
+                                productId = ""
+                                pate = entry.pate
+                                foodTypeId = entry.foodTypeId
+                            },
+                            label = { Text("Suivre la planification") },
+                        )
+                        products.filter { (!it.deleted && !it.putAside) || it.id == entry.productId }
+                            .forEach { product ->
+                                FilterChip(
+                                    selected = productId == product.id,
+                                    onClick = {
+                                        productId = product.id
+                                        pate = product.pateKey
+                                        foodTypeId = product.pateKey
+                                    },
+                                    leadingIcon = {
+                                        FoodIcon(product.pateKey, product.iconColor, size = 18.dp)
+                                    },
+                                    label = { Text(product.name) },
+                                )
+                            }
+                    }
+                } else if (products.isNotEmpty()) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        products.filter { (!it.deleted && !it.putAside) || it.id == entry.productId }.forEach { product ->
                             FilterChip(
                                 selected = productId == product.id,
                                 onClick = {
@@ -724,9 +1325,12 @@ fun EncodeDialog(
                                     pate = product.pateKey
                                     foodTypeId = product.pateKey
                                 },
+                                leadingIcon = {
+                                    FoodIcon(product.pateKey, product.iconColor, size = 18.dp)
+                                },
                                 label = {
                                     Text(
-                                        "${pateEmoji(product.pateKey)} ${product.name}" +
+                                        product.name +
                                             product.weight.takeIf { it.isNotBlank() }?.let { " · $it g" }.orEmpty()
                                     )
                                 },
@@ -742,20 +1346,24 @@ fun EncodeDialog(
                 } else {
                     products.firstOrNull { it.id == productId }?.let { product ->
                         Text(
-                            "${product.brand} · ${product.packPrice} €/sachet",
+                            "${product.brand} · ${product.packPrice} €/${product.packagingLabel.lowercase()}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
 
-                OutlinedTextField(
-                    value = qty,
-                    onValueChange = { qty = it },
-                    label = { Text("Quantité") },
-                    placeholder = { Text("ex : 1 sachet, 80 g") },
-                    singleLine = true,
-                )
+                if (entry.foodAllocations.isNotEmpty()) {
+                    Text("Quantité prévue : 1 portion par chat sélectionné.")
+                } else {
+                    OutlinedTextField(
+                        value = qty,
+                        onValueChange = { qty = it },
+                        label = { Text("Quantité") },
+                        placeholder = { Text("ex : 1 sachet, 80 g") },
+                        singleLine = true,
+                    )
+                }
                 OutlinedTextField(
                     value = note,
                     onValueChange = { note = it },
@@ -993,8 +1601,16 @@ fun SettingsDialog(
     var lowThreshold by remember(stockSettings) {
         mutableStateOf(stockSettings.lowThreshold.toString())
     }
+    var boiteMaxServings by remember(stockSettings) {
+        mutableStateOf(stockSettings.boiteMaxServings.toString())
+    }
+    var barquetteMaxServings by remember(stockSettings) {
+        mutableStateOf(stockSettings.barquetteMaxServings.toString())
+    }
     val warning = warningThreshold.toIntOrNull()
     val low = lowThreshold.toIntOrNull()
+    val boiteMax = boiteMaxServings.toIntOrNull()
+    val barquetteMax = barquetteMaxServings.toIntOrNull()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -1005,20 +1621,43 @@ fun SettingsDialog(
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text("Seuils de stock", fontWeight = FontWeight.Bold)
+                Text(
+                    "Les seuils sont exprimés en portions, quel que soit le type d’emballage.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
                 OutlinedTextField(
                     value = warningThreshold,
                     onValueChange = { warningThreshold = it.filter(Char::isDigit) },
-                    label = { Text("Seuil orange (à surveiller)") },
+                    label = { Text("Seuil orange (portions à surveiller)") },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = lowThreshold,
                     onValueChange = { lowThreshold = it.filter(Char::isDigit) },
-                    label = { Text("Seuil rouge (stock bas)") },
+                    label = { Text("Seuil rouge (portions, stock bas)") },
                     singleLine = true,
                 )
                 Text(
                     "Ces seuils s’appliquent à toutes les nourritures suivies.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text("Capacités des emballages multi-usage", fontWeight = FontWeight.Bold)
+                OutlinedTextField(
+                    value = boiteMaxServings,
+                    onValueChange = { boiteMaxServings = it.filter(Char::isDigit) },
+                    label = { Text("Boîte (portions max)") },
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = barquetteMaxServings,
+                    onValueChange = { barquetteMaxServings = it.filter(Char::isDigit) },
+                    label = { Text("Barquette (portions max)") },
+                    singleLine = true,
+                )
+                Text(
+                    "Ces limites servent de base pour les nouvelles boîtes et barquettes ajoutées dans le stock.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -1081,7 +1720,8 @@ fun SettingsDialog(
                 )
                 TextButton(onClick = onDismiss) { Text("Fermer") }
                 Button(
-                    enabled = warning != null && low != null && low <= warning,
+                    enabled = warning != null && low != null && low <= warning &&
+                        boiteMax != null && boiteMax!! > 0 && barquetteMax != null && barquetteMax!! > 0,
                     onClick = {
                         onSave(
                             url,
@@ -1090,6 +1730,8 @@ fun SettingsDialog(
                             StockSettings(
                                 warningThreshold = warning ?: stockSettings.warningThreshold,
                                 lowThreshold = low ?: stockSettings.lowThreshold,
+                                boiteMaxServings = boiteMax ?: stockSettings.boiteMaxServings,
+                                barquetteMaxServings = barquetteMax ?: stockSettings.barquetteMaxServings,
                                 updatedAt = System.currentTimeMillis(),
                             ),
                         )
