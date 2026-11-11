@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Régénère les icônes Android (res/drawable + icône adaptative) à partir de design/icons.py.
+"""Régénère les icônes Android (res/drawable + icône adaptative) et le logo serveur à partir de design/icons.py.
 
 Usage :  python3 design/generate.py
 Les icônes sont dessinées en un seul endroit (icons.py) ; ce script ne fait que les convertir
-au format "vector drawable" d'Android.
+au format "vector drawable" d'Android et SVG pour le serveur web.
 """
 import os
 import sys
@@ -13,6 +13,7 @@ sys.path.insert(0, HERE)
 from icons import *  # noqa: E402,F403
 
 RES = os.path.join(HERE, "..", "android", "app", "src", "main", "res")
+SERVER_LOGO = os.path.join(HERE, "..", "server", "static", "logo.svg")
 HEAD = '<?xml version="1.0" encoding="utf-8"?>\n'
 NS = 'xmlns:android="http://schemas.android.com/apk/res/android"'
 
@@ -56,7 +57,8 @@ logo = (fill_path(L["foot"], C_FOOT) + fill_path(L["body"], C_BODY)
         + fill_path(L["nose"], C_FACE) + "".join(stroke_path(p, C_FACE, 1.6) for p in L["mouth"]))
 write("drawable/ic_launcher_foreground.xml", HEAD + "<!-- Logo : un bol en forme de tête de chat, plein de croquettes. -->\n"
       f'<vector {NS}\n    android:width="108dp"\n    android:height="108dp"\n    android:viewportWidth="108"\n'
-      f'    android:viewportHeight="108">\n{logo}</vector>\n')
+      f'    android:viewportHeight="108">\n    <group\n        android:scaleX="0.65"\n        android:scaleY="0.65"\n'
+      f'        android:pivotX="54"\n        android:pivotY="54">\n{logo}</group>\n</vector>\n')
 
 mono = " ".join(MONO["fill"] + MONO["holes"])
 write("drawable/ic_launcher_monochrome.xml", HEAD + f'<vector {NS}\n    android:width="108dp"\n    android:height="108dp"\n'
@@ -71,4 +73,31 @@ write("mipmap-anydpi-v26/ic_launcher.xml", HEAD + f'<adaptive-icon {NS}>\n'
       '    <background android:drawable="@color/launcher_bg" />\n'
       '    <foreground android:drawable="@drawable/ic_launcher_foreground" />\n'
       '    <monochrome android:drawable="@drawable/ic_launcher_monochrome" />\n</adaptive-icon>\n')
-print("Icônes régénérées dans", os.path.normpath(RES))
+
+# Génération du SVG pour le serveur (server/static/logo.svg) avec la même échelle (0.65)
+def svg_fill_path(d, color, opacity=None):
+    op = f' fill-opacity="{opacity}"' if opacity else ''
+    return f'  <path fill="{color}"{op} d="{d}" />\n'
+
+def svg_stroke_path(d, color, width=1.6):
+    return f'  <path fill="none" stroke="{color}" stroke-linecap="round" stroke-width="{width}" d="{d}" />\n'
+
+svg_logo = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108">\n'
+    '  <g transform="translate(54 54) scale(0.65) translate(-54 -54)">\n'
+    + svg_fill_path(L["foot"], C_FOOT)
+    + svg_fill_path(L["body"], C_BODY)
+    + "".join(svg_fill_path(p, C_RIM, "0.6") for p in L["inner"])
+    + svg_fill_path(L["rim"], C_RIM)
+    + "".join(svg_fill_path(p, C_KIB) for p in L["kibble"])
+    + "".join(svg_fill_path(p, C_FACE) for p in L["eyes"])
+    + svg_fill_path(L["nose"], C_FACE)
+    + "".join(svg_stroke_path(p, C_FACE, 1.6) for p in L["mouth"])
+    + '  </g>\n</svg>\n'
+)
+
+os.makedirs(os.path.dirname(SERVER_LOGO), exist_ok=True)
+with open(SERVER_LOGO, "w", encoding="utf-8") as f:
+    f.write(svg_logo)
+
+print("Icônes régénérées dans", os.path.normpath(RES), "et serveur:", os.path.normpath(SERVER_LOGO))
